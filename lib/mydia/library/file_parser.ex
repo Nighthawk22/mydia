@@ -36,10 +36,19 @@ defmodule Mydia.Library.FileParser do
 
   # Quality patterns
   @resolutions ~w(2160p 1080p 720p 480p 360p 4K 8K UHD)
-  @sources ~w(BluRay BDRip BRRip WEB WEBRip WEB-DL HDTV DVDRip DVD)
-  @codecs ~w(x265 x264 H265 H264 HEVC AVC XviD DivX VP9 AV1)
+  @sources ~w(BluRay BDRip BRRip WEB WEBRip WEB-DL HDTV DVDRip DVD REMUX)
+  @codecs ~w(x265 x264 H265 H264 HEVC AVC XviD DivX VP9 AV1 NVENC)
   @hdr_formats ~w(HDR10+ HDR10 DolbyVision DoVi HDR)
-  @audio_codecs ~w(DTS DTS-HD DTS-X Atmos TrueHD AAC AC3 DD5.1 DD+)
+  @audio_codecs ~w(DTS-HD DTS-X DTS TrueHD DD5.1 DD+ Atmos AAC AC3 DD)
+
+  # Additional patterns to strip
+  @bit_depth_pattern ~r/\b(8|10|12)[\s-]?bits?\b/i
+  @encoder_pattern ~r/[-_. ](NVENC|QSV|AMF|VCE|VideoToolbox)\b/i
+  # Only remove brackets that contain quality info (not years)
+  @bracket_contents_pattern ~r/\[(HDR|HDR10|HDR10\+|DolbyVision|DoVi|10bit|8bit|x265|x264|HEVC|AVC|2160p|1080p|720p)[^\]]*\]/i
+  @extra_noise_pattern ~r/\b(PROPER|REPACK|INTERNAL|LIMITED|UNRATED|DIRECTORS?\.CUT|EXTENDED|THEATRICAL)\b/i
+  # Audio channel indicators (after dot normalization)
+  @audio_channels_pattern ~r/\b[257]\s+1\b/i
 
   # Common release group patterns (hyphen prefix)
   @release_group_pattern ~r/-([A-Z0-9]+)$/i
@@ -54,8 +63,8 @@ defmodule Mydia.Library.FileParser do
     ~r/Season[. _-](\d{1,2})[. _-]Episode[. _-](\d{1,2})/i
   ]
 
-  # Year pattern - (2020) or .2020.
-  @year_pattern ~r/[\(. _-](19\d{2}|20\d{2})[\). _-]/
+  # Year pattern - (2020), [2020], or .2020.
+  @year_pattern ~r/[\(\[. _-](19\d{2}|20\d{2})[\)\]. _-]/
 
   @doc """
   Parses a file name or path and extracts media metadata.
@@ -88,15 +97,28 @@ defmodule Mydia.Library.FileParser do
     cleaned = normalize_filename(filename)
 
     # Try TV show parsing first (more specific patterns)
-    case parse_tv_show(cleaned) do
-      %{type: :tv_show} = result ->
-        result
+    result =
+      case parse_tv_show(cleaned) do
+        %{type: :tv_show} = result ->
+          result
 
-      _ ->
-        # Fall back to movie parsing
-        parse_movie(cleaned)
-    end
-    |> Map.put(:original_filename, filename)
+        _ ->
+          # Fall back to movie parsing
+          parse_movie(cleaned)
+      end
+      |> Map.put(:original_filename, filename)
+
+    Logger.debug("FileParser parsed file",
+      original: filename,
+      type: result.type,
+      title: result.title,
+      year: result.year,
+      season: result.season,
+      episodes: result.episodes,
+      confidence: result.confidence
+    )
+
+    result
   end
 
   @doc """
@@ -108,15 +130,15 @@ defmodule Mydia.Library.FileParser do
   def parse_movie(filename) do
     cleaned = normalize_filename(filename)
 
-    # Extract quality info and release group first
+    # Extract year FIRST, before removing brackets
+    year = extract_year(cleaned)
+
+    # Extract quality info and release group
     quality = extract_quality(cleaned)
     release_group = extract_release_group(cleaned)
 
     # Remove quality markers and release group to isolate title
     title_part = clean_for_title_extraction(cleaned, quality, release_group)
-
-    # Extract year
-    year = extract_year(cleaned)
 
     # Clean up title
     title =
@@ -128,7 +150,7 @@ defmodule Mydia.Library.FileParser do
     confidence = calculate_movie_confidence(title, year, quality)
 
     %{
-      type: if(confidence > 0.3, do: :movie, else: :unknown),
+      type: if(confidence >= 0.5, do: :movie, else: :unknown),
       title: title,
       year: year,
       season: nil,
@@ -238,8 +260,12 @@ defmodule Mydia.Library.FileParser do
   end
 
   defp extract_tv_title(text, match_index) do
+    # Extract year first
+    year = extract_year(text)
+
     text
     |> String.slice(0, match_index)
+    |> remove_year_from_title(year)
     |> clean_title()
   end
 
@@ -268,9 +294,18 @@ defmodule Mydia.Library.FileParser do
   end
 
   defp find_match(text, patterns) do
-    Enum.find(patterns, fn pattern ->
+    # Sort patterns by length (longest first) to match more specific patterns first
+    patterns
+    |> Enum.sort_by(&String.length/1, :desc)
+    |> Enum.find(fn pattern ->
+      # For patterns with dots (like DD5.1), also try matching with space (DD5 1)
+      # since dots are normalized to spaces in filenames
+      normalized_pattern = String.replace(pattern, ".", " ")
+
       String.contains?(text, pattern) ||
-        String.contains?(String.downcase(text), String.downcase(pattern))
+        String.contains?(String.downcase(text), String.downcase(pattern)) ||
+        String.contains?(text, normalized_pattern) ||
+        String.contains?(String.downcase(text), String.downcase(normalized_pattern))
     end)
   end
 
@@ -278,21 +313,24 @@ defmodule Mydia.Library.FileParser do
     text
     |> remove_quality_markers(quality)
     |> remove_release_group(release_group)
+    |> remove_bit_depth()
+    |> remove_encoders()
+    |> remove_audio_channels()
+    |> remove_bracket_contents()
+    |> remove_extra_noise()
   end
 
-  defp remove_quality_markers(text, quality) do
-    markers =
-      [
-        quality.resolution,
-        quality.source,
-        quality.codec,
-        quality.hdr_format,
-        quality.audio
-      ]
-      |> Enum.reject(&is_nil/1)
+  defp remove_quality_markers(text, _quality) do
+    # Remove ALL known quality patterns, not just the ones we found
+    # This handles cases where files have multiple quality markers
+    all_patterns =
+      @resolutions ++ @sources ++ @codecs ++ @hdr_formats ++ @audio_codecs
 
-    Enum.reduce(markers, text, fn marker, acc ->
-      String.replace(acc, ~r/#{Regex.escape(marker)}/i, " ")
+    # Sort by length (longest first) to match more specific patterns first
+    all_patterns
+    |> Enum.sort_by(&String.length/1, :desc)
+    |> Enum.reduce(text, fn pattern, acc ->
+      String.replace(acc, ~r/\b#{Regex.escape(pattern)}\b/i, " ")
     end)
   end
 
@@ -300,6 +338,29 @@ defmodule Mydia.Library.FileParser do
 
   defp remove_release_group(text, group) do
     String.replace(text, ~r/-#{Regex.escape(group)}$/i, " ")
+  end
+
+  defp remove_bit_depth(text) do
+    String.replace(text, @bit_depth_pattern, " ")
+  end
+
+  defp remove_encoders(text) do
+    String.replace(text, @encoder_pattern, " ")
+  end
+
+  defp remove_audio_channels(text) do
+    String.replace(text, @audio_channels_pattern, " ")
+  end
+
+  defp remove_bracket_contents(text) do
+    text
+    |> String.replace(@bracket_contents_pattern, " ")
+    |> String.replace(~r/\[\s*\]/, " ")
+    |> String.replace(~r/\(\s*\)/, " ")
+  end
+
+  defp remove_extra_noise(text) do
+    String.replace(text, @extra_noise_pattern, " ")
   end
 
   defp remove_year_from_title(text, nil), do: text
@@ -313,18 +374,36 @@ defmodule Mydia.Library.FileParser do
   defp clean_title(text) do
     text
     |> String.replace(~r/\s+/, " ")
+    |> String.replace(~r/[-_]{2,}/, " ")
+    |> String.replace(~r/^[-_\s]+|[-_\s]+$/, "")
     |> String.trim()
-    |> String.split(" ")
+    |> String.split(~r/\s+/)
+    |> Enum.reject(&(&1 == "" || &1 == "-" || &1 == "_"))
     |> Enum.map(&String.capitalize/1)
     |> Enum.join(" ")
   end
 
   defp calculate_movie_confidence(title, year, quality) do
-    base_confidence = 0.5
+    # Require at least some meaningful attributes for classification
+    has_year = year != nil
+    has_quality = quality.resolution != nil || quality.source != nil || quality.codec != nil
+    has_good_title = title != nil && String.length(title) > 3
+    has_multiword_title = title != nil && String.contains?(title, " ")
+
+    # Start with base confidence based on what information we have
+    base_confidence =
+      cond do
+        # No meaningful attributes at all
+        !has_good_title && !has_year && !has_quality -> 0.0
+        # Just a short/single-word title, nothing else
+        !has_year && !has_quality && !has_multiword_title -> 0.2
+        # Has some meaningful attributes
+        true -> 0.5
+      end
 
     confidence =
       base_confidence
-      |> add_confidence(title != nil && String.length(title) > 0, 0.2)
+      |> add_confidence(has_good_title, 0.2)
       |> add_confidence(year != nil, 0.15)
       |> add_confidence(quality.resolution != nil, 0.1)
       |> add_confidence(quality.source != nil, 0.05)

@@ -400,5 +400,44 @@ defmodule Mydia.Library.FileParserTest do
       assert result.quality.codec == "HEVC"
       assert result.quality.audio == "Atmos"
     end
+
+    test "parses movie with 10 bit pattern (with space)" do
+      result = FileParser.parse("The Matrix Reloaded (2003) BDRip 2160p-NVENC 10 bit [HDR].mkv")
+
+      assert result.type == :movie
+      assert result.title == "The Matrix Reloaded"
+      assert result.year == 2003
+      assert result.quality.resolution == "2160p"
+      assert result.quality.source == "BDRip"
+    end
+
+    test "parses movie with 10bit pattern (no space)" do
+      result = FileParser.parse("Inception (2010) 1080p BluRay 10bit x265.mkv")
+
+      assert result.type == :movie
+      assert result.title == "Inception"
+      assert result.year == 2010
+      assert result.quality.resolution == "1080p"
+      assert result.quality.source == "BluRay"
+      assert result.quality.codec == "x265"
+    end
+
+    test "parses movie with 8 bit pattern" do
+      result = FileParser.parse("Movie Title 2020 1080p WEB-DL 8 bit x264.mkv")
+
+      assert result.type == :movie
+      assert result.title == "Movie Title"
+      assert result.year == 2020
+      assert result.quality.resolution == "1080p"
+    end
+
+    test "parses movie with NVENC codec" do
+      result = FileParser.parse("Test Movie (2021) 1080p-NVENC.mkv")
+
+      assert result.type == :movie
+      assert result.title == "Test Movie"
+      assert result.year == 2021
+      assert result.quality.resolution == "1080p"
+    end
   end
 end

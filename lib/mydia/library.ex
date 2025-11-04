@@ -116,6 +116,55 @@ defmodule Mydia.Library do
     end)
   end
 
+  @doc """
+  Triggers a manual library scan for a specific library path.
+
+  Returns an Oban job that will perform the scan.
+  """
+  def trigger_library_scan(library_path_id) do
+    %{library_path_id: library_path_id}
+    |> Mydia.Jobs.LibraryScanner.new()
+    |> Oban.insert()
+  end
+
+  @doc """
+  Triggers a manual library scan for all monitored library paths.
+
+  Returns an Oban job that will perform the scan.
+  """
+  def trigger_full_library_scan do
+    %{}
+    |> Mydia.Jobs.LibraryScanner.new()
+    |> Oban.insert()
+  end
+
+  @doc """
+  Triggers a metadata refresh for a specific media item.
+
+  ## Options
+    - `:fetch_episodes` - For TV shows, whether to refresh episodes (default: true)
+
+  Returns an Oban job that will perform the refresh.
+  """
+  def trigger_metadata_refresh(media_item_id, opts \\ []) do
+    fetch_episodes = Keyword.get(opts, :fetch_episodes, true)
+
+    %{media_item_id: media_item_id, fetch_episodes: fetch_episodes}
+    |> Mydia.Jobs.MetadataRefresh.new()
+    |> Oban.insert()
+  end
+
+  @doc """
+  Triggers a metadata refresh for all monitored media items.
+
+  Returns an Oban job that will perform the refresh.
+  """
+  def trigger_full_metadata_refresh do
+    %{refresh_all: true}
+    |> Mydia.Jobs.MetadataRefresh.new()
+    |> Oban.insert()
+  end
+
   defp maybe_preload(query, nil), do: query
   defp maybe_preload(query, []), do: query
   defp maybe_preload(query, preloads), do: preload(query, ^preloads)

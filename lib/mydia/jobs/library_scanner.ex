@@ -14,7 +14,8 @@ defmodule Mydia.Jobs.LibraryScanner do
     max_attempts: 3
 
   require Logger
-  alias Mydia.{Library, Settings, Repo}
+  alias Mydia.{Library, Settings, Repo, Metadata}
+  alias Mydia.Library.{FileParser, MetadataMatcher, MetadataEnricher}
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: args}) do
@@ -115,11 +116,14 @@ defmodule Mydia.Jobs.LibraryScanner do
     # Detect changes
     changes = Library.Scanner.detect_changes(scan_result, existing_files)
 
+    # Get metadata provider config
+    metadata_config = Metadata.default_relay_config()
+
     # Process changes in a transaction
     Repo.transaction(fn ->
-      # Add new files
+      # Add new files and try to match/enrich them
       Enum.each(changes.new_files, fn file_info ->
-        {:ok, _} =
+        {:ok, media_file} =
           Library.create_media_file(%{
             path: file_info.path,
             size: file_info.size,
@@ -129,6 +133,9 @@ defmodule Mydia.Jobs.LibraryScanner do
           })
 
         Logger.debug("Added new media file", path: file_info.path)
+
+        # Try to parse, match, and enrich the file
+        process_media_file(media_file, file_info, metadata_config)
       end)
 
       # Update modified files
@@ -222,5 +229,65 @@ defmodule Mydia.Jobs.LibraryScanner do
       String.contains?(filename_lower, ["480p", "sd"]) -> "480p"
       true -> "Unknown"
     end
+  end
+
+  defp process_media_file(media_file, file_info, metadata_config) do
+    Logger.debug("Processing media file for metadata", path: file_info.path)
+
+    # Try to match the file to metadata
+    case MetadataMatcher.match_file(file_info.path, config: metadata_config) do
+      {:ok, match_result} ->
+        Logger.info("Matched media file",
+          path: file_info.path,
+          title: match_result.title,
+          provider_id: match_result.provider_id,
+          confidence: match_result.match_confidence
+        )
+
+        # Enrich with full metadata
+        case MetadataEnricher.enrich(match_result,
+               config: metadata_config,
+               media_file_id: media_file.id
+             ) do
+          {:ok, media_item} ->
+            Logger.info("Enriched media item",
+              media_item_id: media_item.id,
+              title: media_item.title
+            )
+
+          {:error, reason} ->
+            Logger.warning("Failed to enrich media",
+              path: file_info.path,
+              reason: reason
+            )
+        end
+
+      {:error, :unknown_media_type} ->
+        Logger.debug("Could not determine media type",
+          path: file_info.path
+        )
+
+      {:error, :no_matches_found} ->
+        Logger.warning("No metadata matches found",
+          path: file_info.path
+        )
+
+      {:error, :low_confidence_match} ->
+        Logger.warning("Only low confidence matches found",
+          path: file_info.path
+        )
+
+      {:error, reason} ->
+        Logger.warning("Failed to match media file",
+          path: file_info.path,
+          reason: reason
+        )
+    end
+  rescue
+    error ->
+      Logger.error("Exception while processing media file",
+        path: file_info.path,
+        error: Exception.message(error)
+      )
   end
 end

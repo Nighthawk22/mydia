@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "deploy": "cd .. && mix assets.deploy && rm -f _build/esbuild*",
-    "screenshots": "node screenshots.js"
+    "screenshots": "node screenshots.js",
+    "populate-media": "node populate-media.js"
   },
   "dependencies": {
     "phoenix": "file:../deps/phoenix",

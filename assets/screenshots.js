@@ -24,26 +24,26 @@ const screenshots = [
   {
     name: 'homepage',
     path: '/',
-    description: 'Homepage / Library view',
+    description: 'Homepage / Dashboard',
     waitFor: '.main-content, [phx-main]'
   },
   {
     name: 'dashboard',
-    path: '/dashboard',
-    description: 'Dashboard',
-    waitFor: 'h1, h2'
+    path: '/media',
+    description: 'Media Library',
+    waitFor: 'h1, h2, main'
   },
   {
     name: 'calendar',
     path: '/calendar',
     description: 'Calendar view',
-    waitFor: 'h1, h2'
+    waitFor: 'h1, h2, main'
   },
   {
     name: 'search',
     path: '/search',
     description: 'Search page',
-    waitFor: 'h1, input[type="search"], form'
+    waitFor: 'h1, input[type="search"], form, main'
   }
 ];
 
@@ -67,16 +67,16 @@ async function takeScreenshots() {
   try {
     // Login first
     console.log('🔐 Logging in...');
-    await page.goto(`${config.baseUrl}/login`);
+    await page.goto(`${config.baseUrl}/auth/local/login`);
 
     // Try to login if login form exists
     const loginForm = await page.locator('form').first().isVisible().catch(() => false);
 
     if (loginForm) {
-      await page.fill('input[name="username"], input[type="text"]', config.credentials.username);
-      await page.fill('input[name="password"], input[type="password"]', config.credentials.password);
+      await page.fill('input[name="user[username]"]', config.credentials.username);
+      await page.fill('input[name="user[password]"]', config.credentials.password);
       await page.click('button[type="submit"]');
-      await page.waitForURL(/\/(dashboard|library)?/, { timeout: 5000 }).catch(() => {});
+      await page.waitForURL(/\/(media|movies|tv)?/, { timeout: 5000 }).catch(() => {});
       console.log('✓ Logged in successfully\n');
     } else {
       console.log('ℹ No login required\n');

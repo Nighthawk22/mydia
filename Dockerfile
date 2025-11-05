@@ -55,8 +55,8 @@ FROM erlang:27-alpine
 # Add OCI labels following LinuxServer.io standards
 LABEL org.opencontainers.image.title="Mydia" \
       org.opencontainers.image.description="Modern, self-hosted media management platform" \
-      org.opencontainers.image.url="https://github.com/arsfeld/mydia" \
-      org.opencontainers.image.source="https://github.com/arsfeld/mydia" \
+      org.opencontainers.image.url="https://github.com/getmydia/mydia" \
+      org.opencontainers.image.source="https://github.com/getmydia/mydia" \
       org.opencontainers.image.vendor="Mydia" \
       org.opencontainers.image.licenses="MIT" \
       maintainer="Mydia"

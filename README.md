@@ -72,7 +72,7 @@ Multi-platform images are available for the following architectures:
 | x86-64 | ✅ | amd64-latest |
 | arm64 | ✅ | arm64-latest |
 
-The multi-arch image `ghcr.io/arsfeld/mydia:latest` will automatically pull the correct image for your architecture.
+The multi-arch image `ghcr.io/getmydia/mydia:latest` will automatically pull the correct image for your architecture.
 
 ## 🚀 Application Setup
 
@@ -101,7 +101,7 @@ Here are some example snippets to help you get started creating a container.
 ---
 services:
   mydia:
-    image: ghcr.io/arsfeld/mydia:latest
+    image: ghcr.io/getmydia/mydia:latest
     container_name: mydia
     environment:
       - PUID=1000
@@ -143,7 +143,7 @@ docker run -d \
   -v /path/to/your/tv:/media/tv \
   -v /path/to/your/downloads:/media/downloads \
   --restart unless-stopped \
-  ghcr.io/arsfeld/mydia:latest
+  ghcr.io/getmydia/mydia:latest
 ```
 
 ## 📋 Parameters
@@ -209,7 +209,7 @@ docker compose up -d
 ```bash
 docker stop mydia
 docker rm mydia
-docker pull ghcr.io/arsfeld/mydia:latest
+docker pull ghcr.io/getmydia/mydia:latest
 # Run your docker run command again
 ```
 

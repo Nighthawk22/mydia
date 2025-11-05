@@ -16,13 +16,13 @@ This guide covers advanced deployment topics for Mydia. For basic deployment ins
 Pull the latest pre-built image from GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/arsfeld/mydia:latest
+docker pull ghcr.io/getmydia/mydia:latest
 ```
 
 Or pull a specific version:
 
 ```bash
-docker pull ghcr.io/arsfeld/mydia:v1.0.0
+docker pull ghcr.io/getmydia/mydia:v1.0.0
 ```
 
 ### Option 2: Build from Source
@@ -71,7 +71,7 @@ OIDC_CLIENT_SECRET=your-client-secret
 ```yaml
 services:
   mydia:
-    image: ghcr.io/arsfeld/mydia:latest
+    image: ghcr.io/getmydia/mydia:latest
     env_file: .env.prod
     # ... rest of configuration
 ```
@@ -85,7 +85,7 @@ docker run -d \
   -v /path/to/mydia/config:/config \
   -v /path/to/movies:/media/movies \
   -v /path/to/tv:/media/tv \
-  ghcr.io/arsfeld/mydia:latest
+  ghcr.io/getmydia/mydia:latest
 ```
 
 See the [Environment Variables Reference](../../README.md#-environment-variables-reference) for all available options.
@@ -180,7 +180,7 @@ docker compose up -d
 ### With Docker Run
 
 ```bash
-docker pull ghcr.io/arsfeld/mydia:latest
+docker pull ghcr.io/getmydia/mydia:latest
 docker stop mydia && docker rm mydia
 # Re-run your docker run command
 ```
@@ -188,7 +188,7 @@ docker stop mydia && docker rm mydia
 To upgrade to a specific version, specify the version tag:
 
 ```bash
-docker pull ghcr.io/arsfeld/mydia:v1.0.0
+docker pull ghcr.io/getmydia/mydia:v1.0.0
 # Update your docker-compose.yml or docker run command to use the specific version
 ```
 
@@ -215,11 +215,11 @@ git push origin v1.0.0
    - Publish to GitHub Container Registry
    - Generate build attestation for supply chain security
 
-5. Monitor the workflow at: https://github.com/arsfeld/mydia/actions
+5. Monitor the workflow at: https://github.com/getmydia/mydia/actions
 
 ### Available Image Tags
 
-Images are published to `ghcr.io/arsfeld/mydia` with the following tags:
+Images are published to `ghcr.io/getmydia/mydia` with the following tags:
 
 - `latest` - Most recent stable release
 - `v1.0.0` - Specific version (full semver)

@@ -1,9 +1,10 @@
 ---
 id: task-31.1
 title: Add disambiguation modal for multiple metadata matches
-status: To Do
+status: Done
 assignee: []
 created_date: '2025-11-04 21:23'
+updated_date: '2025-11-04 23:34'
 labels:
   - ui
   - liveview
@@ -36,10 +37,10 @@ When multiple metadata search results are found, show a modal allowing the user 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Shows modal when 2+ metadata matches found
-- [ ] #2 Displays poster, title, year, overview for each option
-- [ ] #3 User can select a match and continue workflow
-- [ ] #4 User can cancel to abort add-to-library
-- [ ] #5 Selected match is used for metadata fetch
-- [ ] #6 Covers AC #3 from parent task
+- [x] #1 Shows modal when 2+ metadata matches found
+- [x] #2 Displays poster, title, year, overview for each option
+- [x] #3 User can select a match and continue workflow
+- [x] #4 User can cancel to abort add-to-library
+- [x] #5 Selected match is used for metadata fetch
+- [x] #6 Covers AC #3 from parent task
 <!-- AC:END -->

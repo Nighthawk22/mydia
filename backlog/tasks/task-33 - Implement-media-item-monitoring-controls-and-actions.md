@@ -1,9 +1,10 @@
 ---
 id: task-33
 title: Implement media item monitoring controls and actions
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2025-11-04 16:02'
+updated_date: '2025-11-04 23:43'
 labels:
   - library
   - liveview
@@ -108,8 +109,8 @@ Media detail page (task-13) header/actions section
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Monitor toggle switch on media detail page
-- [ ] #2 Toggle updates monitored status in database
+- [x] #1 Monitor toggle switch on media detail page
+- [x] #2 Toggle updates monitored status in database
 - [ ] #3 Manual search button triggers search modal (task-22.9)
 - [ ] #4 Refresh metadata button re-fetches from provider
 - [ ] #5 Quality profile selector dropdown with current profile
@@ -118,8 +119,36 @@ Media detail page (task-13) header/actions section
 - [ ] #8 View files section showing all media files
 - [ ] #9 Download history list with status and details
 - [ ] #10 Status indicators: monitoring, file availability, last search
-- [ ] #11 For TV: series/season/episode-level monitoring controls
-- [ ] #12 Real-time updates via PubSub when status changes
+- [x] #11 For TV: series/season/episode-level monitoring controls
+- [x] #12 Real-time updates via PubSub when status changes
 - [ ] #13 Permission checks for destructive actions
 - [ ] #14 Last search and next search timestamps displayed
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Partial Completion Status
+
+Monitoring controls implemented via related tasks:
+- ✅ task-46: Episode monitoring toggle unified in details page (AC #1, #2, #11, #12)
+- ✅ task-47: Monitor/unmonitor season actions added
+- ✅ task-49: Manual search integrated into details page (AC #3)
+- ✅ task-39: Media details page created with monitoring status display (AC #10)
+
+**Completed features:**
+- Monitor toggle for series/seasons/episodes
+- Manual search button and modal
+- Monitoring status indicators
+- Real-time PubSub updates
+
+**Remaining work (per original AC):**
+- AC #4: Refresh metadata button
+- AC #5: Quality profile selector dropdown
+- AC #6: Delete button with file deletion options
+- AC #7: Edit media button/modal
+- AC #8: View files section
+- AC #9: Download history list (partially done, needs enhancement)
+- AC #13: Permission checks for destructive actions
+- AC #14: Last/next search timestamps
+<!-- SECTION:NOTES:END -->

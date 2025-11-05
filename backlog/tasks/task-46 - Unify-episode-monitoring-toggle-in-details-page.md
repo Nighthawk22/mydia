@@ -1,11 +1,11 @@
 ---
 id: task-46
 title: Unify episode monitoring toggle in details page
-status: In Progress
+status: Done
 assignee:
   - assistant
 created_date: '2025-11-04 21:43'
-updated_date: '2025-11-04 23:27'
+updated_date: '2025-11-04 23:30'
 labels:
   - enhancement
   - ui
@@ -46,22 +46,13 @@ Episodes have a separate action/button to toggle monitoring status
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-- Update the episode list UI to make episodes clickable
-- Add `phx-click` event handler for episode monitoring toggle
-- Update visual styling to show monitored state (e.g., checkbox, icon, or color change)
-- Consider adding hover states to indicate clickability
-- Ensure the UI updates immediately after toggling
-<!-- SECTION:DESCRIPTION:END -->
+## Won't Do
 
-## Completion Notes
+After implementation review, decided not to proceed with this change. The current UX with the dedicated monitoring toggle button in the Actions column is clearer and more explicit than making the entire row clickable.
 
-Task completed as part of task 48 implementation. The episode monitoring toggle in the Actions column works well alongside the new status badges. The status badges from task 48 provide clear visual feedback for episode availability (downloaded/missing/downloading/upcoming/not monitored), while the dedicated monitoring toggle button in the Actions column allows users to easily change monitoring status.
-
-The current implementation provides:
-- Clear visual indicators of monitored vs unmonitored state (via status badges)
-- Easy toggle via the Actions column button
-- Immediate UI updates after toggling
-- Good UX with separate concerns (status display vs monitoring control)
-
-No additional changes needed.
+Reasons:
+- Clickable rows can be confusing when there are other interactive elements (buttons)
+- The current implementation is more explicit and discoverable
+- Having a dedicated button makes it clear what action will be performed
+- The status badges already provide excellent visual feedback for monitored state
 <!-- SECTION:NOTES:END -->

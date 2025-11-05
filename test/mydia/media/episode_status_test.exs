@@ -98,6 +98,18 @@ defmodule Mydia.Media.EpisodeStatusTest do
     test "status_label/1 returns TBA for :tba" do
       assert EpisodeStatus.status_label(:tba) == "TBA"
     end
+
+    test "status_color/1 returns badge-warning for :partial" do
+      assert EpisodeStatus.status_color(:partial) == "badge-warning"
+    end
+
+    test "status_icon/1 returns hero-minus-circle for :partial" do
+      assert EpisodeStatus.status_icon(:partial) == "hero-minus-circle"
+    end
+
+    test "status_label/1 returns Partial for :partial" do
+      assert EpisodeStatus.status_label(:partial) == "Partial"
+    end
   end
 
   describe "status_details/1" do

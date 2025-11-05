@@ -25,6 +25,24 @@ defmodule MydiaWeb.MediaLive.Show do
     # Build timeline events
     timeline_events = build_timeline_events(media_item, downloads_with_status)
 
+    # Initialize expanded seasons - expand the first (most recent) season by default
+    expanded_seasons =
+      case media_item.type do
+        "tv_show" ->
+          media_item.episodes
+          |> Enum.map(& &1.season_number)
+          |> Enum.uniq()
+          |> Enum.sort(:desc)
+          |> List.first()
+          |> case do
+            nil -> MapSet.new()
+            season_num -> MapSet.new([season_num])
+          end
+
+        _ ->
+          MapSet.new()
+      end
+
     {:ok,
      socket
      |> assign(:media_item, media_item)
@@ -61,6 +79,12 @@ defmodule MydiaWeb.MediaLive.Show do
      # File metadata refresh state
      |> assign(:refreshing_file_metadata, false)
      |> assign(:rescanning_season, nil)
+     # File rename modal state
+     |> assign(:show_rename_modal, false)
+     |> assign(:rename_previews, [])
+     |> assign(:renaming_files, false)
+     # Season expanded/collapsed state
+     |> assign(:expanded_seasons, expanded_seasons)
      |> stream_configure(:search_results, dom_id: &generate_result_id/1)
      |> stream(:search_results, [])}
   end
@@ -365,6 +389,20 @@ defmodule MydiaWeb.MediaLive.Show do
     end
   end
 
+  def handle_event("toggle_season_expanded", %{"season-number" => season_number_str}, socket) do
+    season_number = String.to_integer(season_number_str)
+    expanded_seasons = socket.assigns.expanded_seasons
+
+    updated_seasons =
+      if MapSet.member?(expanded_seasons, season_number) do
+        MapSet.delete(expanded_seasons, season_number)
+      else
+        MapSet.put(expanded_seasons, season_number)
+      end
+
+    {:noreply, assign(socket, :expanded_seasons, updated_seasons)}
+  end
+
   def handle_event("search_episode", %{"episode-id" => episode_id}, socket) do
     episode = Media.get_episode!(episode_id, preload: [:media_item])
     media_item = episode.media_item
@@ -513,6 +551,46 @@ defmodule MydiaWeb.MediaLive.Show do
      socket
      |> assign(:show_file_details_modal, false)
      |> assign(:file_details, nil)}
+  end
+
+  def handle_event("show_rename_modal", _params, socket) do
+    # Reload media item to ensure we have fresh file data
+    media_item = load_media_item(socket.assigns.media_item.id)
+
+    # Generate rename previews for all files
+    rename_previews =
+      Mydia.Library.FileRenamer.generate_rename_previews_for_media_item(media_item)
+
+    {:noreply,
+     socket
+     |> assign(:show_rename_modal, true)
+     |> assign(:rename_previews, rename_previews)}
+  end
+
+  def handle_event("hide_rename_modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_rename_modal, false)
+     |> assign(:rename_previews, [])
+     |> assign(:renaming_files, false)}
+  end
+
+  def handle_event("confirm_rename_files", _params, socket) do
+    rename_previews = socket.assigns.rename_previews
+
+    # Build rename specs for batch operation
+    rename_specs =
+      Enum.map(rename_previews, fn preview ->
+        %{file_id: preview.file_id, new_path: preview.proposed_path}
+      end)
+
+    # Start async rename operation
+    {:noreply,
+     socket
+     |> assign(:renaming_files, true)
+     |> start_async(:rename_files, fn ->
+       Mydia.Library.FileRenamer.rename_files_batch(rename_specs)
+     end)}
   end
 
   def handle_event("mark_file_preferred", %{"file-id" => file_id}, socket) do
@@ -1006,6 +1084,52 @@ defmodule MydiaWeb.MediaLive.Show do
      |> put_flash(:error, "Season metadata refresh failed unexpectedly")}
   end
 
+  def handle_async(:rename_files, {:ok, {:ok, results}}, socket) do
+    # Count successes and errors
+    success_count = Enum.count(results, &match?({:ok, _}, &1))
+    error_count = Enum.count(results, &match?({:error, _}, &1))
+
+    message =
+      cond do
+        error_count == 0 ->
+          "Successfully renamed #{success_count} file(s)"
+
+        success_count == 0 ->
+          "Failed to rename all files"
+
+        true ->
+          "Renamed #{success_count} file(s), #{error_count} failed"
+      end
+
+    flash_type = if error_count > 0, do: :warning, else: :info
+
+    {:noreply,
+     socket
+     |> assign(:renaming_files, false)
+     |> assign(:show_rename_modal, false)
+     |> assign(:rename_previews, [])
+     |> assign(:media_item, load_media_item(socket.assigns.media_item.id))
+     |> put_flash(flash_type, message)}
+  end
+
+  def handle_async(:rename_files, {:ok, {:error, reason}}, socket) do
+    Logger.error("File rename failed: #{inspect(reason)}")
+
+    {:noreply,
+     socket
+     |> assign(:renaming_files, false)
+     |> put_flash(:error, "Failed to rename files: #{inspect(reason)}")}
+  end
+
+  def handle_async(:rename_files, {:exit, reason}, socket) do
+    Logger.error("File rename task crashed: #{inspect(reason)}")
+
+    {:noreply,
+     socket
+     |> assign(:renaming_files, false)
+     |> put_flash(:error, "File rename failed unexpectedly")}
+  end
+
   defp load_media_item(id) do
     preload_list = build_preload_list()
 
@@ -1038,6 +1162,23 @@ defmodule MydiaWeb.MediaLive.Show do
         (download_map.episode_id &&
            Enum.any?(media_item.episodes || [], fn ep -> ep.id == download_map.episode_id end))
     end)
+  end
+
+  defp has_media_files?(media_item) do
+    # Check if media item has any files (movie files or episode files)
+    movie_files = length(media_item.media_files || []) > 0
+
+    episode_files =
+      case media_item.type do
+        "tv_show" ->
+          media_item.episodes
+          |> Enum.any?(fn episode -> length(episode.media_files || []) > 0 end)
+
+        _ ->
+          false
+      end
+
+    movie_files || episode_files
   end
 
   defp get_poster_url(media_item) do
@@ -1204,10 +1345,6 @@ defmodule MydiaWeb.MediaLive.Show do
 
   defp episode_status_icon(status) do
     EpisodeStatus.status_icon(status)
-  end
-
-  defp episode_status_label(status) do
-    EpisodeStatus.status_label(status)
   end
 
   defp episode_status_details(episode) do

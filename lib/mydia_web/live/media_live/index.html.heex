@@ -64,6 +64,28 @@
           </button>
         <% end %>
 
+        <%!-- Re-scan button (shown on Movies and TV Shows pages) --%>
+        <%= if @filter_type in ["movie", "tv_show"] do %>
+          <button
+            type="button"
+            class={[
+              "btn btn-sm gap-2",
+              @scanning && "btn-disabled loading"
+            ]}
+            phx-click="trigger_rescan"
+            disabled={@scanning}
+            title="Scan library for new media"
+          >
+            <%= if @scanning do %>
+              <span class="loading loading-spinner loading-sm"></span>
+              <span class="hidden sm:inline">Scanning...</span>
+            <% else %>
+              <.icon name="hero-arrow-path" class="w-4 h-4" />
+              <span class="hidden sm:inline">Re-scan</span>
+            <% end %>
+          </button>
+        <% end %>
+
         <%!-- Add button for movies or TV shows --%>
         <%= if @filter_type == "movie" do %>
           <.link navigate={~p"/add/movie"} class="btn btn-primary btn-sm">
@@ -223,10 +245,11 @@
               <%!-- Status badge --%>
               <% {status, counts} = get_media_item_status(item) %>
               <div class="flex items-center gap-1">
-                <span class={["badge badge-xs gap-1", media_status_color(status)]}>
-                  <.icon name={media_status_icon(status)} class="w-3 h-3" />
-                  <span>{media_status_label(status)}</span>
-                </span>
+                <div class="tooltip tooltip-right" data-tip={media_status_label(status)}>
+                  <span class={["badge badge-xs", media_status_color(status)]}>
+                    <.icon name={media_status_icon(status)} class="w-3 h-3" />
+                  </span>
+                </div>
                 <%= if episode_count = format_episode_count(counts) do %>
                   <span class="text-xs text-base-content/70">{episode_count}</span>
                 <% end %>
@@ -300,10 +323,11 @@
             <td class="hidden lg:table-cell">
               <% {status, counts} = get_media_item_status(item) %>
               <div class="flex flex-col gap-1">
-                <span class={["badge badge-sm gap-1", media_status_color(status)]}>
-                  <.icon name={media_status_icon(status)} class="w-3 h-3" />
-                  {media_status_label(status)}
-                </span>
+                <div class="tooltip tooltip-right" data-tip={media_status_label(status)}>
+                  <span class={["badge badge-sm", media_status_color(status)]}>
+                    <.icon name={media_status_icon(status)} class="w-4 h-4" />
+                  </span>
+                </div>
                 <%= if episode_count = format_episode_count(counts) do %>
                   <span class="text-xs text-base-content/70">{episode_count}</span>
                 <% end %>

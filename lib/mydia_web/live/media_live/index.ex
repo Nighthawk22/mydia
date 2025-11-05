@@ -11,6 +11,7 @@ defmodule MydiaWeb.MediaLive.Index do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Mydia.PubSub, "downloads")
+      Phoenix.PubSub.subscribe(Mydia.PubSub, "library_scanner")
     end
 
     {:ok,
@@ -27,6 +28,8 @@ defmodule MydiaWeb.MediaLive.Index do
      |> assign(:show_batch_edit_modal, false)
      |> assign(:quality_profiles, [])
      |> assign(:batch_edit_form, to_form(%{}, as: :batch_edit))
+     |> assign(:scanning, false)
+     |> assign(:scan_result, nil)
      |> stream(:media_items, [])}
   end
 
@@ -285,11 +288,104 @@ defmodule MydiaWeb.MediaLive.Index do
     end
   end
 
+  def handle_event("trigger_rescan", _params, socket) do
+    alias Mydia.Library
+
+    case Library.trigger_full_library_scan() do
+      {:ok, _job} ->
+        {:noreply,
+         socket
+         |> assign(:scanning, true)
+         |> assign(:scan_result, nil)
+         |> put_flash(:info, "Library scan started...")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to start library scan")}
+    end
+  end
+
   @impl true
   def handle_info({:download_updated, _download_id}, socket) do
     # Just trigger a re-render to update the downloads counter in the sidebar
     # The counter will be recalculated when the layout renders
     {:noreply, socket}
+  end
+
+  def handle_info({:library_scan_started, %{type: scan_type}}, socket) do
+    # Only show scanning status if the scan matches the current page filter
+    should_show =
+      case {socket.assigns.filter_type, scan_type} do
+        {nil, _} -> true
+        {"movie", :movies} -> true
+        {"tv_show", :series} -> true
+        _ -> false
+      end
+
+    socket =
+      if should_show do
+        assign(socket, :scanning, true)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info(
+        {:library_scan_completed,
+         %{
+           type: scan_type,
+           new_files: new_files,
+           modified_files: modified_files,
+           deleted_files: deleted_files
+         }},
+        socket
+      ) do
+    # Only process if the scan matches the current page filter
+    should_process =
+      case {socket.assigns.filter_type, scan_type} do
+        {nil, _} -> true
+        {"movie", :movies} -> true
+        {"tv_show", :series} -> true
+        _ -> false
+      end
+
+    socket =
+      if should_process do
+        total_changes = new_files + modified_files + deleted_files
+
+        message =
+          if total_changes > 0 do
+            parts = []
+            parts = if new_files > 0, do: ["#{new_files} new" | parts], else: parts
+            parts = if modified_files > 0, do: ["#{modified_files} modified" | parts], else: parts
+            parts = if deleted_files > 0, do: ["#{deleted_files} removed" | parts], else: parts
+            "Library scan completed: " <> Enum.join(parts, ", ")
+          else
+            "Library scan completed: No changes detected"
+          end
+
+        socket
+        |> assign(:scanning, false)
+        |> assign(:scan_result, %{
+          new_files: new_files,
+          modified_files: modified_files,
+          deleted_files: deleted_files
+        })
+        |> put_flash(:info, message)
+        |> load_media_items(reset: true)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:library_scan_failed, %{error: error}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:scanning, false)
+     |> put_flash(:error, "Library scan failed: #{error}")}
   end
 
   defp load_media_items(socket, opts) do

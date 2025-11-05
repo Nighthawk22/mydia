@@ -15,7 +15,7 @@ defmodule Mydia.Jobs.MediaImport do
     max_attempts: 3
 
   require Logger
-  alias Mydia.{Downloads, Library, Settings}
+  alias Mydia.{Downloads, Library, Media, Settings}
   alias Mydia.Downloads.Client
   alias Mydia.Library.{FileAnalyzer, FileParser}
 
@@ -205,12 +205,6 @@ defmodule Mydia.Jobs.MediaImport do
   end
 
   defp organize_and_import_files(download, files, library_path, args) do
-    # Determine destination directory structure
-    dest_dir = build_destination_path(download, library_path.path)
-
-    # Ensure destination directory exists
-    File.mkdir_p!(dest_dir)
-
     # Filter video files only
     video_files = filter_video_files(files)
 
@@ -218,10 +212,10 @@ defmodule Mydia.Jobs.MediaImport do
       Logger.warning("No video files found in download", download_id: download.id)
       {:error, :no_video_files}
     else
-      # Import each file
+      # Import each file - destination path is determined per-file for TV shows
       results =
         Enum.map(video_files, fn file ->
-          import_file(file, dest_dir, download, args)
+          import_file(file, download, library_path.path, args)
         end)
 
       # Check if all succeeded
@@ -284,7 +278,70 @@ defmodule Mydia.Jobs.MediaImport do
     end)
   end
 
-  defp import_file(file, dest_dir, download, args) do
+  defp import_file(file, download, library_root, args) do
+    # Parse filename to extract episode info for TV shows
+    parsed = FileParser.parse(file.name)
+
+    # Determine episode and destination path
+    {episode, dest_dir} =
+      case {download.media_item, download.episode, parsed.type} do
+        # TV show with parsed episode info - look up the episode
+        {%{type: "tv_show"} = media_item, _, :tv_show} when not is_nil(parsed.season) ->
+          episode_number = List.first(parsed.episodes) || 1
+
+          episode =
+            Media.get_episode_by_number(
+              media_item.id,
+              parsed.season,
+              episode_number
+            )
+
+          if episode do
+            Logger.debug("Found episode for file",
+              file: file.name,
+              season: parsed.season,
+              episode: episode_number,
+              episode_id: episode.id
+            )
+
+            # Build destination path using parsed season info
+            title = sanitize_filename(media_item.title)
+
+            dest_dir =
+              Path.join([
+                library_root,
+                title,
+                "Season #{String.pad_leading("#{parsed.season}", 2, "0")}"
+              ])
+
+            {episode, dest_dir}
+          else
+            Logger.warning("Episode not found in database, falling back to download episode",
+              file: file.name,
+              season: parsed.season,
+              episode: episode_number,
+              media_item: media_item.title
+            )
+
+            # Fall back to download episode and default path
+            dest_dir = build_destination_path(download, library_root)
+            {download.episode, dest_dir}
+          end
+
+        # TV show but no parsed info - use download episode
+        {%{type: "tv_show"}, episode, _} when not is_nil(episode) ->
+          dest_dir = build_destination_path(download, library_root)
+          {episode, dest_dir}
+
+        # Movie or other - use download info
+        _ ->
+          dest_dir = build_destination_path(download, library_root)
+          {download.episode, dest_dir}
+      end
+
+    # Ensure destination directory exists
+    File.mkdir_p!(dest_dir)
+
     dest_path = Path.join(dest_dir, file.name)
 
     # Check if file already exists
@@ -298,7 +355,7 @@ defmodule Mydia.Jobs.MediaImport do
       case Library.get_media_file_by_path(dest_path) do
         nil ->
           # File exists but not in DB - this is a conflict
-          handle_file_conflict(file, dest_path, download, args)
+          handle_file_conflict(file, dest_path, episode, download, args)
 
         existing_file ->
           # File exists and is in DB - reuse it
@@ -309,7 +366,7 @@ defmodule Mydia.Jobs.MediaImport do
       # Copy or move file
       case copy_or_move_file(file.path, dest_path, args) do
         :ok ->
-          create_media_file_record(dest_path, file.size, download)
+          create_media_file_record(dest_path, file.size, episode, download)
 
         {:error, reason} ->
           Logger.error("Failed to copy/move file",
@@ -323,14 +380,14 @@ defmodule Mydia.Jobs.MediaImport do
     end
   end
 
-  defp handle_file_conflict(file, dest_path, download, args) do
+  defp handle_file_conflict(file, dest_path, episode, download, args) do
     # Check if sizes match
     dest_size = File.stat!(dest_path).size
 
     if dest_size == file.size do
       # Files are likely identical - create DB record
       Logger.info("File sizes match, creating DB record", path: dest_path)
-      create_media_file_record(dest_path, file.size, download)
+      create_media_file_record(dest_path, file.size, episode, download)
     else
       # Files differ - rename new file
       new_dest = generate_unique_path(dest_path)
@@ -338,7 +395,7 @@ defmodule Mydia.Jobs.MediaImport do
 
       case copy_or_move_file(file.path, new_dest, args) do
         :ok ->
-          create_media_file_record(new_dest, file.size, download)
+          create_media_file_record(new_dest, file.size, episode, download)
 
         {:error, reason} ->
           {:error, reason}
@@ -386,7 +443,7 @@ defmodule Mydia.Jobs.MediaImport do
     end
   end
 
-  defp create_media_file_record(path, size, download) do
+  defp create_media_file_record(path, size, episode, download) do
     # Extract metadata from filename first (as fallback)
     filename_metadata = FileParser.parse(Path.basename(path))
 
@@ -445,8 +502,15 @@ defmodule Mydia.Jobs.MediaImport do
       }
     }
 
+    # Use the episode parameter if provided, otherwise fall back to download associations
     attrs =
       cond do
+        episode && episode.id ->
+          Map.merge(attrs, %{
+            episode_id: episode.id,
+            media_item_id: nil
+          })
+
         download.episode_id ->
           Map.merge(attrs, %{
             episode_id: download.episode_id,
@@ -460,7 +524,7 @@ defmodule Mydia.Jobs.MediaImport do
           })
 
         true ->
-          Logger.error("Download has no media_item_id or episode_id", download_id: download.id)
+          Logger.error("No episode_id or media_item_id available", download_id: download.id)
           attrs
       end
 
@@ -469,6 +533,7 @@ defmodule Mydia.Jobs.MediaImport do
         Logger.info("Created media file record",
           path: path,
           id: media_file.id,
+          episode_id: media_file.episode_id,
           resolution: media_file.resolution,
           codec: media_file.codec
         )

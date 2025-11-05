@@ -90,6 +90,13 @@ defmodule Mydia.Jobs.LibraryScanner do
       type: library_path.type
     )
 
+    # Broadcast scan started
+    Phoenix.PubSub.broadcast(
+      Mydia.PubSub,
+      "library_scanner",
+      {:library_scan_started, %{library_path_id: library_path.id, type: library_path.type}}
+    )
+
     # Mark scan as in progress (skip for runtime paths)
     if updatable_library_path?(library_path) do
       {:ok, _} =
@@ -175,6 +182,20 @@ defmodule Mydia.Jobs.LibraryScanner do
             })
         end
 
+        # Broadcast scan completed
+        Phoenix.PubSub.broadcast(
+          Mydia.PubSub,
+          "library_scanner",
+          {:library_scan_completed,
+           %{
+             library_path_id: library_path.id,
+             type: library_path.type,
+             new_files: length(result.changes.new_files),
+             modified_files: length(result.changes.modified_files),
+             deleted_files: length(result.changes.deleted_files)
+           }}
+        )
+
         {:ok, result}
 
       {:error, reason} ->
@@ -189,6 +210,14 @@ defmodule Mydia.Jobs.LibraryScanner do
               last_scan_error: error_message
             })
         end
+
+        # Broadcast scan failed
+        Phoenix.PubSub.broadcast(
+          Mydia.PubSub,
+          "library_scanner",
+          {:library_scan_failed,
+           %{library_path_id: library_path.id, type: library_path.type, error: error_message}}
+        )
 
         {:error, reason}
     end
@@ -206,6 +235,14 @@ defmodule Mydia.Jobs.LibraryScanner do
             last_scan_error: error_message
           })
       end
+
+      # Broadcast scan failed
+      Phoenix.PubSub.broadcast(
+        Mydia.PubSub,
+        "library_scanner",
+        {:library_scan_failed,
+         %{library_path_id: library_path.id, type: library_path.type, error: error_message}}
+      )
 
       {:error, error}
   end

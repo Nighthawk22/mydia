@@ -12,12 +12,13 @@ defmodule Mydia.Media.EpisodeStatus do
 
   alias Mydia.Media.Episode
 
-  @type status :: :downloaded | :downloading | :missing | :upcoming | :not_monitored | :tba
+  @type status ::
+          :downloaded | :downloading | :missing | :upcoming | :not_monitored | :tba | :partial
 
   @doc """
   Determines the current status of an episode based on its attributes.
 
-  Returns one of: :downloaded, :downloading, :missing, :upcoming, :not_monitored, :tba
+  Returns one of: :downloaded, :downloading, :missing, :upcoming, :not_monitored, :tba, :partial
 
   ## Examples
 
@@ -110,6 +111,7 @@ defmodule Mydia.Media.EpisodeStatus do
   def status_color(:not_monitored), do: "badge-ghost"
   def status_color(:upcoming), do: "badge-outline"
   def status_color(:tba), do: "badge-warning"
+  def status_color(:partial), do: "badge-warning"
 
   @doc """
   Returns HeroIcon name for a given status (for accessibility).
@@ -129,6 +131,7 @@ defmodule Mydia.Media.EpisodeStatus do
   def status_icon(:not_monitored), do: "hero-eye-slash"
   def status_icon(:upcoming), do: "hero-clock"
   def status_icon(:tba), do: "hero-question-mark-circle"
+  def status_icon(:partial), do: "hero-minus-circle"
 
   @doc """
   Returns human-readable label for a given status.
@@ -148,6 +151,7 @@ defmodule Mydia.Media.EpisodeStatus do
   def status_label(:not_monitored), do: "Not Monitored"
   def status_label(:upcoming), do: "Upcoming"
   def status_label(:tba), do: "TBA"
+  def status_label(:partial), do: "Partial"
 
   @doc """
   Returns detailed status information for display in tooltips.

@@ -36,35 +36,7 @@ A modern, self-hosted media management platform for tracking, organizing, and mo
 
 ## 🚀 Quick Start
 
-### Docker (Recommended)
-
-```bash
-# Start everything
-./dev up -d
-
-# Run migrations
-./dev mix ecto.migrate
-
-# View at http://localhost:4000
-# Login: admin / admin
-```
-
-See all commands with `./dev`
-
-### Local Development
-
-```bash
-mix setup
-mix phx.server
-```
-
-Visit [localhost:4000](http://localhost:4000)
-
-## 📦 Production Deployment
-
 Pre-built Docker images are available for multiple platforms (amd64, arm64).
-
-### Quick Start
 
 1. **Generate secrets:**
 
@@ -113,10 +85,6 @@ services:
       OIDC_CLIENT_ID: ""
       OIDC_CLIENT_SECRET: ""
 
-      # Application settings
-      MIX_ENV: "prod"
-      PHX_SERVER: "true"
-
     volumes:
       # Database and application data
       - mydia_data:/data
@@ -158,8 +126,6 @@ docker run -d \
   -e PORT="4000" \
   -e MOVIES_PATH="/media/movies" \
   -e TV_PATH="/media/tv" \
-  -e MIX_ENV="prod" \
-  -e PHX_SERVER="true" \
   -v mydia_data:/data \
   -v /path/to/your/movies:/media/movies \
   -v /path/to/your/tv:/media/tv \
@@ -173,8 +139,7 @@ See the **[Environment Variables Reference](#-environment-variables-reference)**
 - Download client integration (qBittorrent, Transmission)
 - Indexer configuration (Prowlarr, Jackett)
 - OIDC authentication
-- Database tuning
-- Logging and background jobs
+- Advanced settings
 
 ### Upgrading
 
@@ -297,25 +262,11 @@ INDEXER_1_BASE_URL=http://prowlarr:9696
 INDEXER_1_API_KEY=your-prowlarr-api-key-here
 ```
 
-### Database Configuration
+### Advanced Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `POOL_SIZE` | Database connection pool size | `5` |
-| `DATABASE_TIMEOUT` | Query timeout (milliseconds) | `5000` |
-| `SQLITE_CACHE_SIZE` | SQLite cache size (negative = MB) | `-64000` |
-| `SQLITE_BUSY_TIMEOUT` | Lock wait timeout (milliseconds) | `5000` |
-| `SQLITE_JOURNAL_MODE` | Journal mode (wal recommended) | `wal` |
-| `SQLITE_SYNCHRONOUS` | Sync mode (normal, full) | `normal` |
-
-### Background Jobs & Logging
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DOWNLOAD_MONITOR_INTERVAL_MINUTES` | Minutes between download status checks | `2` |
 | `LOG_LEVEL` | Application log level (debug, info, warning, error) | `info` |
-| `OBAN_POLL_INTERVAL` | Job queue poll interval (milliseconds) | `1000` |
-| `OBAN_MAX_AGE_DAYS` | Days to retain completed jobs | `7` |
 
 ### Configuration Precedence
 
@@ -327,6 +278,32 @@ Configuration is loaded in this order (highest to lowest priority):
 4. **Schema Defaults** - Built-in defaults
 
 ## 🔧 Development
+
+### Local Setup
+
+**With Docker (Recommended):**
+
+```bash
+# Start everything
+./dev up -d
+
+# Run migrations
+./dev mix ecto.migrate
+
+# View at http://localhost:4000
+# Login: admin / admin
+```
+
+See all commands with `./dev`
+
+**Without Docker:**
+
+```bash
+mix setup
+mix phx.server
+```
+
+Visit [localhost:4000](http://localhost:4000)
 
 ### Continuous Integration
 

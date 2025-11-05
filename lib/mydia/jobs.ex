@@ -26,13 +26,22 @@ defmodule Mydia.Jobs do
       {Oban.Plugins.Cron, opts} ->
         crontab = Keyword.get(opts, :crontab, [])
 
-        Enum.map(crontab, fn {expression, worker} ->
-          %{
-            worker: worker,
-            worker_name: worker_display_name(worker),
-            schedule: expression,
-            next_run: calculate_next_run(expression)
-          }
+        Enum.map(crontab, fn
+          {expression, worker, _opts} ->
+            %{
+              worker: worker,
+              worker_name: worker_display_name(worker),
+              schedule: expression,
+              next_run: calculate_next_run(expression)
+            }
+
+          {expression, worker} ->
+            %{
+              worker: worker,
+              worker_name: worker_display_name(worker),
+              schedule: expression,
+              next_run: calculate_next_run(expression)
+            }
         end)
     end
   end

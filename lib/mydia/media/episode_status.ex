@@ -12,12 +12,12 @@ defmodule Mydia.Media.EpisodeStatus do
 
   alias Mydia.Media.Episode
 
-  @type status :: :downloaded | :downloading | :missing | :upcoming | :not_monitored
+  @type status :: :downloaded | :downloading | :missing | :upcoming | :not_monitored | :tba
 
   @doc """
   Determines the current status of an episode based on its attributes.
 
-  Returns one of: :downloaded, :downloading, :missing, :upcoming, :not_monitored
+  Returns one of: :downloaded, :downloading, :missing, :upcoming, :not_monitored, :tba
 
   ## Examples
 
@@ -29,6 +29,9 @@ defmodule Mydia.Media.EpisodeStatus do
 
       iex> get_episode_status(%Episode{monitored: true, air_date: ~D[2099-12-31]})
       :upcoming
+
+      iex> get_episode_status(%Episode{monitored: true, air_date: nil})
+      :tba
   """
   @spec get_episode_status(Episode.t()) :: status()
   def get_episode_status(%Episode{monitored: false}), do: :not_monitored
@@ -46,7 +49,7 @@ defmodule Mydia.Media.EpisodeStatus do
     end
   end
 
-  def get_episode_status(%Episode{}), do: check_downloading_or_missing()
+  def get_episode_status(%Episode{air_date: nil}), do: :tba
 
   defp check_downloading_or_missing do
     # This will be enhanced when we pass downloads data
@@ -76,12 +79,12 @@ defmodule Mydia.Media.EpisodeStatus do
     end
   end
 
-  def get_episode_status_with_downloads(%Episode{} = episode), do: check_downloads(episode)
+  def get_episode_status_with_downloads(%Episode{air_date: nil}), do: :tba
 
   defp check_downloads(%Episode{downloads: downloads}) when is_list(downloads) do
     has_active_downloads? =
       Enum.any?(downloads, fn download ->
-        download.status in [:pending, :downloading]
+        is_nil(download.completed_at) && is_nil(download.error_message)
       end)
 
     if has_active_downloads?, do: :downloading, else: :missing
@@ -106,6 +109,7 @@ defmodule Mydia.Media.EpisodeStatus do
   def status_color(:missing), do: "badge-error"
   def status_color(:not_monitored), do: "badge-ghost"
   def status_color(:upcoming), do: "badge-outline"
+  def status_color(:tba), do: "badge-warning"
 
   @doc """
   Returns HeroIcon name for a given status (for accessibility).
@@ -124,6 +128,7 @@ defmodule Mydia.Media.EpisodeStatus do
   def status_icon(:missing), do: "hero-exclamation-circle"
   def status_icon(:not_monitored), do: "hero-eye-slash"
   def status_icon(:upcoming), do: "hero-clock"
+  def status_icon(:tba), do: "hero-question-mark-circle"
 
   @doc """
   Returns human-readable label for a given status.
@@ -142,6 +147,7 @@ defmodule Mydia.Media.EpisodeStatus do
   def status_label(:missing), do: "Missing"
   def status_label(:not_monitored), do: "Not Monitored"
   def status_label(:upcoming), do: "Upcoming"
+  def status_label(:tba), do: "TBA"
 
   @doc """
   Returns detailed status information for display in tooltips.
@@ -152,7 +158,7 @@ defmodule Mydia.Media.EpisodeStatus do
       "Downloaded (1 file)"
   """
   @spec status_details(Episode.t()) :: String.t()
-  def status_details(%Episode{media_files: media_files} = episode)
+  def status_details(%Episode{media_files: media_files})
       when length(media_files) > 0 do
     file_count = length(media_files)
     quality = get_best_quality(media_files)
@@ -165,21 +171,35 @@ defmodule Mydia.Media.EpisodeStatus do
   end
 
   def status_details(%Episode{downloads: downloads} = episode) when is_list(downloads) do
-    active_downloads = Enum.filter(downloads, &(&1.status in [:pending, :downloading]))
+    active_downloads =
+      Enum.filter(downloads, fn download ->
+        is_nil(download.completed_at) && is_nil(download.error_message)
+      end)
 
     case length(active_downloads) do
       0 ->
-        if episode.air_date && Date.compare(episode.air_date, Date.utc_today()) == :gt do
-          format_upcoming_date(episode.air_date)
-        else
-          if episode.monitored, do: "Missing", else: "Not Monitored"
+        cond do
+          !episode.monitored ->
+            "Not Monitored"
+
+          is_nil(episode.air_date) ->
+            "Air date to be announced"
+
+          episode.air_date && Date.compare(episode.air_date, Date.utc_today()) == :gt ->
+            format_upcoming_date(episode.air_date)
+
+          true ->
+            "Missing"
         end
 
       count ->
         download = hd(active_downloads)
 
-        if download.progress do
-          "Downloading (#{round(download.progress)}%)"
+        # Handle both plain Download structs and enriched download maps
+        progress = get_download_progress(download)
+
+        if progress do
+          "Downloading (#{round(progress)}%)"
         else
           "Downloading (#{count} active)"
         end
@@ -191,12 +211,26 @@ defmodule Mydia.Media.EpisodeStatus do
       !monitored ->
         "Not Monitored"
 
+      is_nil(air_date) ->
+        "Air date to be announced"
+
       air_date && Date.compare(air_date, Date.utc_today()) == :gt ->
         format_upcoming_date(air_date)
 
       true ->
         "Missing"
     end
+  end
+
+  # Safely extracts progress from either a Download struct or enriched download map
+  defp get_download_progress(download) when is_struct(download) do
+    # Plain Download struct doesn't have progress field
+    nil
+  end
+
+  defp get_download_progress(download) when is_map(download) do
+    # Enriched download map from list_downloads_with_status has progress
+    Map.get(download, :progress)
   end
 
   defp get_best_quality(media_files) do

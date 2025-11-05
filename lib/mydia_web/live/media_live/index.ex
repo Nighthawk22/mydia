@@ -9,6 +9,10 @@ defmodule MydiaWeb.MediaLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Mydia.PubSub, "downloads")
+    end
+
     {:ok,
      socket
      |> assign(:view_mode, :grid)
@@ -281,6 +285,13 @@ defmodule MydiaWeb.MediaLive.Index do
     end
   end
 
+  @impl true
+  def handle_info({:download_updated, _download_id}, socket) do
+    # Just trigger a re-render to update the downloads counter in the sidebar
+    # The counter will be recalculated when the layout renders
+    {:noreply, socket}
+  end
+
   defp load_media_items(socket, opts) do
     reset? = Keyword.get(opts, :reset, false)
     page = if reset?, do: 0, else: socket.assigns.page
@@ -333,7 +344,7 @@ defmodule MydiaWeb.MediaLive.Index do
   defp apply_quality_filter(items, quality) do
     Enum.filter(items, fn item ->
       item.media_files
-      |> Enum.any?(fn file -> file.quality == quality end)
+      |> Enum.any?(fn file -> file.resolution == quality end)
     end)
   end
 
@@ -358,7 +369,7 @@ defmodule MydiaWeb.MediaLive.Index do
       files ->
         # Get the highest quality from available files
         files
-        |> Enum.map(& &1.quality)
+        |> Enum.map(& &1.resolution)
         |> Enum.reject(&is_nil/1)
         |> Enum.sort(:desc)
         |> List.first()

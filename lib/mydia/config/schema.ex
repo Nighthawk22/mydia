@@ -61,6 +61,13 @@ defmodule Mydia.Config.Schema do
       field :max_age_days, :integer, default: 7
     end
 
+    embeds_one :hooks, Hooks, on_replace: :update, primary_key: false do
+      field :enabled, :boolean, default: true
+      field :directory, :string, default: "hooks"
+      field :default_timeout_ms, :integer, default: 5000
+      field :max_timeout_ms, :integer, default: 30000
+    end
+
     embeds_many :download_clients, DownloadClient, on_replace: :delete, primary_key: false do
       field :name, :string
       field :type, Ecto.Enum, values: [:qbittorrent, :transmission, :http]
@@ -105,6 +112,7 @@ defmodule Mydia.Config.Schema do
     |> cast_embed(:downloads, with: &downloads_changeset/2)
     |> cast_embed(:logging, with: &logging_changeset/2)
     |> cast_embed(:oban, with: &oban_changeset/2)
+    |> cast_embed(:hooks, with: &hooks_changeset/2)
     |> cast_embed(:download_clients, with: &download_client_changeset/2)
     |> cast_embed(:indexers, with: &indexer_changeset/2)
     |> validate_configuration()
@@ -189,6 +197,14 @@ defmodule Mydia.Config.Schema do
     |> cast(attrs, [:poll_interval, :max_age_days])
     |> validate_number(:poll_interval, greater_than: 0)
     |> validate_number(:max_age_days, greater_than: 0)
+  end
+
+  defp hooks_changeset(schema, attrs) do
+    schema
+    |> cast(attrs, [:enabled, :directory, :default_timeout_ms, :max_timeout_ms])
+    |> validate_required([:enabled, :directory])
+    |> validate_number(:default_timeout_ms, greater_than: 0)
+    |> validate_number(:max_timeout_ms, greater_than: 0)
   end
 
   defp download_client_changeset(schema, attrs) do
@@ -304,6 +320,7 @@ defmodule Mydia.Config.Schema do
       downloads: %__MODULE__.Downloads{},
       logging: %__MODULE__.Logging{},
       oban: %__MODULE__.Oban{},
+      hooks: %__MODULE__.Hooks{},
       download_clients: [],
       indexers: []
     }

@@ -10,6 +10,10 @@ defmodule MydiaWeb.SearchLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Mydia.PubSub, "downloads")
+    end
+
     {:ok,
      socket
      |> assign(:page_title, "Search Media")
@@ -219,7 +223,19 @@ defmodule MydiaWeb.SearchLive.Index do
            {:ok, metadata} ->
              # Create media item without parsed data (since parsing failed)
              attrs = build_media_item_attrs_from_metadata_only(metadata, media_type_atom)
-             Media.create_media_item(attrs)
+
+             case Media.create_media_item(attrs) do
+               {:ok, media_item} ->
+                 # For TV shows, always fetch all episodes
+                 if media_type_atom == :tv_show do
+                   Media.refresh_episodes_for_tv_show(media_item, season_monitoring: "all")
+                 end
+
+                 {:ok, media_item}
+
+               error ->
+                 error
+             end
 
            error ->
              error
@@ -257,6 +273,12 @@ defmodule MydiaWeb.SearchLive.Index do
   end
 
   @impl true
+  def handle_info({:download_updated, _download_id}, socket) do
+    # Just trigger a re-render to update the downloads counter in the sidebar
+    # The counter will be recalculated when the layout renders
+    {:noreply, socket}
+  end
+
   def handle_info({:trigger_download, download_url, title}, socket) do
     # This will be called after adding to library if download was requested
     # Currently just logs, but will integrate with actual download functionality
@@ -697,10 +719,17 @@ defmodule MydiaWeb.SearchLive.Index do
 
         case Media.create_media_item(attrs) do
           {:ok, media_item} ->
-            # For TV shows, create episode records if parsed from release
+            # For TV shows, create episode records
             media_item =
-              if parsed.type == :tv_show and parsed.season and parsed.episodes do
-                create_episodes_for_release(media_item, parsed)
+              if parsed.type == :tv_show do
+                # If parsed from release with specific season/episodes, create those
+                if parsed.season and parsed.episodes do
+                  create_episodes_for_release(media_item, parsed)
+                end
+
+                # Always fetch all episodes from metadata
+                Media.refresh_episodes_for_tv_show(media_item, season_monitoring: "all")
+
                 Media.get_media_item!(media_item.id)
               else
                 media_item

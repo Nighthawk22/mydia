@@ -23,16 +23,23 @@ defmodule Mydia.DownloadsFixtures do
           id
       end
 
+    unique_id = System.unique_integer([:positive])
+
     {:ok, download} =
       attrs
       |> Enum.into(%{
         media_item_id: media_item_id,
-        title: "Test Download #{System.unique_integer([:positive])}",
-        status: "pending",
+        title: "Test Download #{unique_id}",
         indexer: "test-indexer",
-        release_name: "Test.Release.1080p.WEB-DL",
-        size_bytes: 1_000_000_000,
-        progress: 0
+        download_url: "magnet:?xt=urn:btih:test#{unique_id}",
+        download_client: "test-client",
+        download_client_id: "test-#{unique_id}",
+        metadata: %{
+          size: 1_000_000_000,
+          seeders: 10,
+          leechers: 5,
+          quality: "1080p"
+        }
       })
       |> Mydia.Downloads.create_download()
 

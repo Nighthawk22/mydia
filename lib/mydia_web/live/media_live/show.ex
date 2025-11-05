@@ -19,9 +19,17 @@ defmodule MydiaWeb.MediaLive.Show do
     media_item = load_media_item(id)
     quality_profiles = Settings.list_quality_profiles()
 
+    # Load downloads with real-time status
+    downloads_with_status = load_downloads_with_status(media_item)
+
+    # Build timeline events
+    timeline_events = build_timeline_events(media_item, downloads_with_status)
+
     {:ok,
      socket
      |> assign(:media_item, media_item)
+     |> assign(:downloads_with_status, downloads_with_status)
+     |> assign(:timeline_events, timeline_events)
      |> assign(:page_title, media_item.title)
      |> assign(:show_edit_modal, false)
      |> assign(:show_delete_confirm, false)
@@ -46,6 +54,12 @@ defmodule MydiaWeb.MediaLive.Show do
      |> assign(:quality_filter, nil)
      |> assign(:sort_by, :quality)
      |> assign(:results_empty?, false)
+     # Auto search state
+     |> assign(:auto_searching, false)
+     |> assign(:auto_searching_season, nil)
+     |> assign(:auto_searching_episode, nil)
+     # File metadata refresh state
+     |> assign(:refreshing_file_metadata, false)
      |> stream_configure(:search_results, dom_id: &generate_result_id/1)
      |> stream(:search_results, [])}
   end
@@ -102,6 +116,69 @@ defmodule MydiaWeb.MediaLive.Show do
      |> start_async(:search, fn -> perform_search(search_query, min_seeders) end)}
   end
 
+  def handle_event("auto_search_download", _params, socket) do
+    media_item = socket.assigns.media_item
+    downloads_with_status = socket.assigns.downloads_with_status
+
+    # Check if auto search is possible
+    unless can_auto_search?(media_item, downloads_with_status) do
+      message =
+        cond do
+          is_nil(media_item.quality_profile_id) ->
+            "Cannot auto search: No quality profile assigned"
+
+          has_active_download?(downloads_with_status) ->
+            "Cannot auto search: Download already in progress"
+
+          true ->
+            "Cannot auto search: Prerequisites not met"
+        end
+
+      {:noreply, put_flash(socket, :error, message)}
+    else
+      # Queue the background job based on media type
+      case media_item.type do
+        "movie" ->
+          # Queue MovieSearchJob for this specific movie
+          %{mode: "specific", media_item_id: media_item.id}
+          |> Mydia.Jobs.MovieSearch.new()
+          |> Oban.insert()
+
+          Logger.info("Queued auto search for movie",
+            media_item_id: media_item.id,
+            title: media_item.title
+          )
+
+          # Set a timeout to reset auto_searching state if no download is created
+          Process.send_after(self(), :auto_search_timeout, 30_000)
+
+          {:noreply,
+           socket
+           |> assign(:auto_searching, true)
+           |> put_flash(:info, "Searching indexers for #{media_item.title}...")}
+
+        "tv_show" ->
+          # Queue TVShowSearchJob for all missing episodes
+          %{mode: "show", media_item_id: media_item.id}
+          |> Mydia.Jobs.TVShowSearch.new()
+          |> Oban.insert()
+
+          Logger.info("Queued auto search for TV show",
+            media_item_id: media_item.id,
+            title: media_item.title
+          )
+
+          # Set a timeout to reset auto_searching state if no download is created
+          Process.send_after(self(), :auto_search_timeout, 30_000)
+
+          {:noreply,
+           socket
+           |> assign(:auto_searching, true)
+           |> put_flash(:info, "Searching for all missing episodes of #{media_item.title}...")}
+      end
+    end
+  end
+
   def handle_event("refresh_metadata", _params, socket) do
     media_item = socket.assigns.media_item
 
@@ -129,6 +206,21 @@ defmodule MydiaWeb.MediaLive.Show do
          socket
          |> assign(:media_item, load_media_item(socket.assigns.media_item.id))
          |> put_flash(:info, "Metadata refreshed")}
+    end
+  end
+
+  def handle_event("refresh_all_file_metadata", _params, socket) do
+    media_item = socket.assigns.media_item
+    media_files = media_item.media_files
+
+    if Enum.empty?(media_files) do
+      {:noreply, put_flash(socket, :info, "No media files to refresh")}
+    else
+      # Start async task to refresh all file metadata
+      {:noreply,
+       socket
+       |> assign(:refreshing_file_metadata, true)
+       |> start_async(:refresh_files, fn -> refresh_files(media_files) end)}
     end
   end
 
@@ -275,6 +367,57 @@ defmodule MydiaWeb.MediaLive.Show do
      |> start_async(:search, fn -> perform_search(search_query, min_seeders) end)}
   end
 
+  def handle_event("auto_search_season", %{"season-number" => season_number_str}, socket) do
+    media_item = socket.assigns.media_item
+    season_num = String.to_integer(season_number_str)
+
+    # Queue TVShowSearchJob with season mode
+    %{mode: "season", media_item_id: media_item.id, season_number: season_num}
+    |> Mydia.Jobs.TVShowSearch.new()
+    |> Oban.insert()
+
+    Logger.info("Queued auto search for season",
+      media_item_id: media_item.id,
+      season_number: season_num,
+      title: media_item.title
+    )
+
+    # Set a timeout to reset auto_searching_season state if no download is created
+    Process.send_after(self(), {:auto_search_season_timeout, season_num}, 30_000)
+
+    {:noreply,
+     socket
+     |> assign(:auto_searching_season, season_num)
+     |> put_flash(:info, "Searching for season #{season_num} (preferring season pack)...")}
+  end
+
+  def handle_event("auto_search_episode", %{"episode-id" => episode_id}, socket) do
+    # Load episode to get details for flash message
+    episode = Media.get_episode!(episode_id)
+
+    # Queue TVShowSearchJob with specific episode mode
+    %{mode: "specific", episode_id: episode_id}
+    |> Mydia.Jobs.TVShowSearch.new()
+    |> Oban.insert()
+
+    Logger.info("Queued auto search for episode",
+      episode_id: episode_id,
+      season_number: episode.season_number,
+      episode_number: episode.episode_number
+    )
+
+    # Set a timeout to reset auto_searching_episode state if no download is created
+    Process.send_after(self(), {:auto_search_episode_timeout, episode_id}, 30_000)
+
+    {:noreply,
+     socket
+     |> assign(:auto_searching_episode, episode_id)
+     |> put_flash(
+       :info,
+       "Searching for S#{episode.season_number}E#{episode.episode_number}..."
+     )}
+  end
+
   def handle_event("show_file_delete_confirm", %{"file-id" => file_id}, socket) do
     file = Library.get_media_file!(file_id)
 
@@ -346,16 +489,46 @@ defmodule MydiaWeb.MediaLive.Show do
   end
 
   def handle_event("retry_download", %{"download-id" => download_id}, socket) do
-    download = Downloads.get_download!(download_id)
+    download = Downloads.get_download!(download_id, preload: [:media_item, :episode])
 
-    case Downloads.retry_download(download) do
-      {:ok, _} ->
-        {:noreply, put_flash(socket, :info, "Download retry initiated")}
+    # Clear error message if any
+    case Downloads.update_download(download, %{error_message: nil}) do
+      {:ok, updated} ->
+        # Re-add to client using the original download URL
+        search_result = %Mydia.Indexers.SearchResult{
+          download_url: updated.download_url,
+          title: updated.title,
+          indexer: updated.indexer,
+          size: updated.metadata["size"],
+          seeders: updated.metadata["seeders"],
+          leechers: updated.metadata["leechers"],
+          quality: updated.metadata["quality"]
+        }
+
+        opts =
+          []
+          |> maybe_add_opt(:media_item_id, updated.media_item_id)
+          |> maybe_add_opt(:episode_id, updated.episode_id)
+          |> maybe_add_opt(:client_name, updated.download_client)
+
+        # Delete old download record and create new one
+        Downloads.delete_download(updated)
+
+        case Downloads.initiate_download(search_result, opts) do
+          {:ok, _new_download} ->
+            {:noreply, put_flash(socket, :info, "Download re-initiated")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Failed to retry download: #{inspect(reason)}")}
+        end
 
       {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Failed to retry download")}
+        {:noreply, put_flash(socket, :error, "Failed to update download")}
     end
   end
+
+  defp maybe_add_opt(opts, _key, nil), do: opts
+  defp maybe_add_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
   def handle_event("show_download_cancel_confirm", %{"download-id" => download_id}, socket) do
     download = Downloads.get_download!(download_id)
@@ -491,7 +664,15 @@ defmodule MydiaWeb.MediaLive.Show do
 
   def handle_event(
         "download_from_search",
-        %{"download-url" => download_url, "title" => title},
+        %{
+          "download-url" => download_url,
+          "title" => title,
+          "indexer" => indexer,
+          "size" => size,
+          "seeders" => seeders,
+          "leechers" => leechers,
+          "quality" => quality
+        },
         socket
       ) do
     media_item = socket.assigns.media_item
@@ -507,48 +688,162 @@ defmodule MydiaWeb.MediaLive.Show do
           {media_item.id, nil}
       end
 
-    # Create download record
-    download_attrs = %{
-      media_item_id: media_item_id,
-      episode_id: episode_id,
-      title: title,
+    # Create SearchResult struct to pass to initiate_download
+    search_result = %SearchResult{
       download_url: download_url,
-      status: "pending",
-      indexer: "Manual"
+      title: title,
+      indexer: indexer,
+      size: parse_int(size),
+      seeders: parse_int(seeders),
+      leechers: parse_int(leechers),
+      quality: quality
     }
 
-    case Downloads.create_download(download_attrs) do
+    # Build options for initiate_download
+    opts =
+      []
+      |> maybe_add_opt(:media_item_id, media_item_id)
+      |> maybe_add_opt(:episode_id, episode_id)
+
+    case Downloads.initiate_download(search_result, opts) do
       {:ok, _download} ->
-        Logger.info("Download created: #{title}")
+        Logger.info("Download initiated: #{title}")
 
         {:noreply,
          socket
-         |> put_flash(:info, "Download started: #{title}")}
+         |> put_flash(:info, "Download started: #{title}")
+         |> assign(:media_item, load_media_item(media_item.id))
+         |> assign(
+           :downloads_with_status,
+           load_downloads_with_status(load_media_item(media_item.id))
+         )
+         |> assign(:show_manual_search_modal, false)
+         |> assign(:manual_search_query, "")
+         |> assign(:manual_search_context, nil)
+         |> assign(:searching, false)
+         |> assign(:results_empty?, false)
+         |> stream(:search_results, [], reset: true)}
 
-      {:error, changeset} ->
-        Logger.error("Failed to create download: #{inspect(changeset.errors)}")
+      {:error, reason} ->
+        Logger.error("Failed to initiate download: #{inspect(reason)}")
 
         {:noreply,
          socket
-         |> put_flash(:error, "Failed to start download")}
+         |> put_flash(:error, "Failed to start download: #{inspect(reason)}")}
     end
   end
+
+  defp parse_int(value) when is_integer(value), do: value
+
+  defp parse_int(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, _} -> int
+      :error -> 0
+    end
+  end
+
+  defp parse_int(_), do: 0
 
   @impl true
   def handle_info({:download_created, download}, socket) do
     if download_for_media?(download, socket.assigns.media_item) do
-      {:noreply, assign(socket, :media_item, load_media_item(socket.assigns.media_item.id))}
+      media_item = load_media_item(socket.assigns.media_item.id)
+      downloads_with_status = load_downloads_with_status(media_item)
+      timeline_events = build_timeline_events(media_item, downloads_with_status)
+
+      # If auto searching was in progress, show success message
+      socket =
+        cond do
+          socket.assigns.auto_searching ->
+            put_flash(socket, :info, "Download started: #{download.title}")
+
+          socket.assigns.auto_searching_season &&
+            download.episode_id &&
+              episode_in_season?(download.episode_id, socket.assigns.auto_searching_season) ->
+            put_flash(socket, :info, "Download started: #{download.title}")
+
+          socket.assigns.auto_searching_episode &&
+              download.episode_id == socket.assigns.auto_searching_episode ->
+            put_flash(socket, :info, "Download started: #{download.title}")
+
+          true ->
+            socket
+        end
+
+      {:noreply,
+       socket
+       |> assign(:media_item, media_item)
+       |> assign(:downloads_with_status, downloads_with_status)
+       |> assign(:timeline_events, timeline_events)
+       |> assign(:auto_searching, false)
+       |> assign(:auto_searching_season, nil)
+       |> assign(:auto_searching_episode, nil)}
     else
       {:noreply, socket}
     end
   end
 
-  def handle_info({:download_updated, download}, socket) do
-    if download_for_media?(download, socket.assigns.media_item) do
-      {:noreply, assign(socket, :media_item, load_media_item(socket.assigns.media_item.id))}
-    else
-      {:noreply, socket}
-    end
+  def handle_info({:download_updated, _download_id}, socket) do
+    # Reload media item and downloads with status
+    media_item = load_media_item(socket.assigns.media_item.id)
+    downloads_with_status = load_downloads_with_status(media_item)
+    timeline_events = build_timeline_events(media_item, downloads_with_status)
+
+    {:noreply,
+     socket
+     |> assign(:media_item, media_item)
+     |> assign(:downloads_with_status, downloads_with_status)
+     |> assign(:timeline_events, timeline_events)}
+  end
+
+  def handle_info(:auto_search_timeout, socket) do
+    # If auto_searching is still true after timeout, reset it and show message
+    socket =
+      if socket.assigns.auto_searching do
+        socket
+        |> assign(:auto_searching, false)
+        |> put_flash(:warning, "Search completed but no suitable releases found")
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:auto_search_season_timeout, season_num}, socket) do
+    # If auto_searching_season is still set after timeout, reset it and show message
+    socket =
+      if socket.assigns.auto_searching_season == season_num do
+        socket
+        |> assign(:auto_searching_season, nil)
+        |> put_flash(
+          :warning,
+          "Search completed but no suitable releases found for season #{season_num}"
+        )
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:auto_search_episode_timeout, episode_id}, socket) do
+    # If auto_searching_episode is still set after timeout, reset it and show message
+    socket =
+      if socket.assigns.auto_searching_episode == episode_id do
+        episode = Media.get_episode!(episode_id)
+
+        socket
+        |> assign(:auto_searching_episode, nil)
+        |> put_flash(
+          :warning,
+          "Search completed but no suitable releases found for S#{episode.season_number}E#{episode.episode_number}"
+        )
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -593,6 +888,39 @@ defmodule MydiaWeb.MediaLive.Show do
      |> put_flash(:error, "Search failed unexpectedly")}
   end
 
+  def handle_async(:refresh_files, {:ok, {:ok, success_count, error_count}}, socket) do
+    message =
+      if error_count > 0 do
+        "Refreshed #{success_count} file(s), #{error_count} failed"
+      else
+        "Successfully refreshed #{success_count} file(s)"
+      end
+
+    {:noreply,
+     socket
+     |> assign(:refreshing_file_metadata, false)
+     |> assign(:media_item, load_media_item(socket.assigns.media_item.id))
+     |> put_flash(:info, message)}
+  end
+
+  def handle_async(:refresh_files, {:ok, {:error, reason}}, socket) do
+    Logger.error("File metadata refresh failed: #{inspect(reason)}")
+
+    {:noreply,
+     socket
+     |> assign(:refreshing_file_metadata, false)
+     |> put_flash(:error, "Failed to refresh file metadata: #{inspect(reason)}")}
+  end
+
+  def handle_async(:refresh_files, {:exit, reason}, socket) do
+    Logger.error("File metadata refresh task crashed: #{inspect(reason)}")
+
+    {:noreply,
+     socket
+     |> assign(:refreshing_file_metadata, false)
+     |> put_flash(:error, "Metadata refresh failed unexpectedly")}
+  end
+
   defp load_media_item(id) do
     preload_list = build_preload_list()
 
@@ -612,6 +940,19 @@ defmodule MydiaWeb.MediaLive.Show do
     download.media_item_id == media_item.id or
       (download.episode_id &&
          Enum.any?(media_item.episodes, fn ep -> ep.id == download.episode_id end))
+  end
+
+  defp load_downloads_with_status(media_item) do
+    # Get all downloads with real-time status from clients
+    all_downloads = Downloads.list_downloads_with_status(filter: :all)
+
+    # Filter to only downloads for this media item
+    all_downloads
+    |> Enum.filter(fn download_map ->
+      download_map.media_item_id == media_item.id or
+        (download_map.episode_id &&
+           Enum.any?(media_item.episodes || [], fn ep -> ep.id == download_map.episode_id end))
+    end)
   end
 
   defp get_poster_url(media_item) do
@@ -750,7 +1091,7 @@ defmodule MydiaWeb.MediaLive.Show do
   defp group_episodes_by_season(episodes) do
     episodes
     |> Enum.group_by(& &1.season_number)
-    |> Enum.sort_by(fn {season, _} -> season end)
+    |> Enum.sort_by(fn {season, _} -> season end, :desc)
   end
 
   defp get_episode_quality_badge(episode) do
@@ -788,10 +1129,10 @@ defmodule MydiaWeb.MediaLive.Show do
     EpisodeStatus.status_details(episode)
   end
 
-  defp get_download_status(media_item) do
+  defp get_download_status(downloads_with_status) do
     active_downloads =
-      media_item.downloads
-      |> Enum.filter(fn d -> d.status in ["pending", "downloading"] end)
+      downloads_with_status
+      |> Enum.filter(fn d -> d.status in ["downloading", "seeding", "checking", "paused"] end)
 
     case active_downloads do
       [] -> nil
@@ -801,10 +1142,172 @@ defmodule MydiaWeb.MediaLive.Show do
 
   defp format_download_status("pending"), do: "Queued"
   defp format_download_status("downloading"), do: "Downloading"
+  defp format_download_status("seeding"), do: "Seeding"
+  defp format_download_status("checking"), do: "Checking"
+  defp format_download_status("paused"), do: "Paused"
   defp format_download_status("completed"), do: "Completed"
   defp format_download_status("failed"), do: "Failed"
   defp format_download_status("cancelled"), do: "Cancelled"
+  defp format_download_status("missing"), do: "Missing"
   defp format_download_status(_), do: "Unknown"
+
+  ## Timeline Functions
+
+  defp build_timeline_events(media_item, downloads_with_status) do
+    events = []
+
+    # Add media item added event
+    events = [
+      %{
+        type: :media_added,
+        timestamp: media_item.inserted_at,
+        title: "Added to Library",
+        description: "#{media_item.title} was added to your library",
+        icon: "hero-plus-circle",
+        color: "text-info",
+        metadata: nil
+      }
+      | events
+    ]
+
+    # Add download events
+    download_events =
+      downloads_with_status
+      |> Enum.flat_map(fn download ->
+        initiated_event = %{
+          type: :download_initiated,
+          timestamp: download.inserted_at,
+          title: "Download Started",
+          description: download.title,
+          icon: "hero-arrow-down-tray",
+          color: "text-primary",
+          metadata: %{
+            quality: download.metadata["quality"],
+            indexer: download.indexer
+          }
+        }
+
+        completion_events =
+          cond do
+            download.status == "completed" && download.completed_at ->
+              [
+                %{
+                  type: :download_completed,
+                  timestamp: download.completed_at,
+                  title: "Download Completed",
+                  description: download.title,
+                  icon: "hero-check-circle",
+                  color: "text-success",
+                  metadata: %{quality: download.metadata["quality"]}
+                }
+              ]
+
+            download.status == "failed" ->
+              [
+                %{
+                  type: :download_failed,
+                  timestamp: download.updated_at,
+                  title: "Download Failed",
+                  description: download.title,
+                  icon: "hero-x-circle",
+                  color: "text-error",
+                  metadata: %{error: download.error_message}
+                }
+              ]
+
+            download.status == "cancelled" ->
+              [
+                %{
+                  type: :download_cancelled,
+                  timestamp: download.updated_at,
+                  title: "Download Cancelled",
+                  description: download.title,
+                  icon: "hero-minus-circle",
+                  color: "text-warning",
+                  metadata: nil
+                }
+              ]
+
+            true ->
+              []
+          end
+
+        [initiated_event | completion_events]
+      end)
+
+    events = events ++ download_events
+
+    # Add media file import events
+    file_events =
+      media_item.media_files
+      |> Enum.map(fn file ->
+        %{
+          type: :file_imported,
+          timestamp: file.inserted_at,
+          title: "File Imported",
+          description: Path.basename(file.path),
+          icon: "hero-document-check",
+          color: "text-success",
+          metadata: %{
+            resolution: file.resolution,
+            codec: file.codec,
+            size: file.size
+          }
+        }
+      end)
+
+    events = events ++ file_events
+
+    # Add episode refresh events for TV shows
+    episode_events =
+      if media_item.type == "tv_show" && media_item.episodes do
+        # Group episodes by inserted_at date to detect batch imports
+        media_item.episodes
+        |> Enum.group_by(fn ep ->
+          ep.inserted_at
+          |> DateTime.truncate(:second)
+        end)
+        |> Enum.map(fn {timestamp, episodes} ->
+          count = length(episodes)
+
+          %{
+            type: :episodes_refreshed,
+            timestamp: timestamp,
+            title: "Episodes Updated",
+            description: "#{count} episode#{if count > 1, do: "s", else: ""} added/updated",
+            icon: "hero-arrow-path",
+            color: "text-info",
+            metadata: %{count: count}
+          }
+        end)
+      else
+        []
+      end
+
+    events = events ++ episode_events
+
+    # Sort all events by timestamp (newest first)
+    events
+    |> Enum.sort_by(& &1.timestamp, {:desc, DateTime})
+  end
+
+  defp format_relative_time(timestamp) do
+    now = DateTime.utc_now()
+    diff = DateTime.diff(now, timestamp, :second)
+
+    cond do
+      diff < 60 -> "Just now"
+      diff < 3600 -> "#{div(diff, 60)} minutes ago"
+      diff < 86400 -> "#{div(diff, 3600)} hours ago"
+      diff < 2_592_000 -> "#{div(diff, 86400)} days ago"
+      diff < 31_536_000 -> "#{div(diff, 2_592_000)} months ago"
+      true -> "#{div(diff, 31_536_000)} years ago"
+    end
+  end
+
+  defp format_absolute_time(timestamp) do
+    Calendar.strftime(timestamp, "%b %d, %Y at %I:%M %p")
+  end
 
   ## Manual Search Functions
 
@@ -929,5 +1432,74 @@ defmodule MydiaWeb.MediaLive.Show do
 
   defp format_search_date(%DateTime{} = dt) do
     Calendar.strftime(dt, "%b %d, %Y")
+  end
+
+  # Auto search helper functions
+
+  defp can_auto_search?(%Media.MediaItem{} = media_item, downloads_with_status) do
+    # Can auto search if:
+    # 1. Has a quality profile assigned
+    # 2. Is a supported media type (movie or tv_show)
+    # 3. No active downloads currently in progress
+    has_quality_profile = not is_nil(media_item.quality_profile_id)
+    is_supported_type = media_item.type in ["movie", "tv_show"]
+
+    has_quality_profile and is_supported_type and not has_active_download?(downloads_with_status)
+  end
+
+  defp has_active_download?(downloads_with_status) do
+    Enum.any?(downloads_with_status, fn d ->
+      d.status in ["downloading", "seeding", "checking", "paused"]
+    end)
+  end
+
+  defp episode_in_season?(episode_id, season_num) do
+    episode = Media.get_episode!(episode_id)
+    episode.season_number == season_num
+  end
+
+  # Download quality formatting
+
+  defp format_download_quality(nil), do: "Unknown"
+
+  defp format_download_quality(quality) when is_map(quality) do
+    # Build a concise quality description from the quality map
+    parts =
+      [
+        quality["resolution"] || quality[:resolution],
+        quality["source"] || quality[:source],
+        (quality["hdr"] || quality[:hdr]) && "HDR"
+      ]
+      |> Enum.filter(& &1)
+
+    case Enum.join(parts, " ") do
+      "" -> "Unknown"
+      description -> description
+    end
+  end
+
+  defp format_download_quality(_), do: "Unknown"
+
+  # File metadata refresh helper
+  defp refresh_files(media_files) do
+    Logger.info("Starting file metadata refresh", file_count: length(media_files))
+
+    results =
+      Enum.map(media_files, fn file ->
+        case Library.refresh_file_metadata(file) do
+          {:ok, _} -> :ok
+          {:error, _} -> :error
+        end
+      end)
+
+    success_count = Enum.count(results, &(&1 == :ok))
+    error_count = Enum.count(results, &(&1 == :error))
+
+    Logger.info("Completed file metadata refresh",
+      success: success_count,
+      errors: error_count
+    )
+
+    {:ok, success_count, error_count}
   end
 end

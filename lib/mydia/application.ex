@@ -23,7 +23,10 @@ defmodule Mydia.Application do
         {Phoenix.PubSub, name: Mydia.PubSub},
         Mydia.Downloads.Client.Registry,
         Mydia.Indexers.Adapter.Registry,
-        Mydia.Metadata.Provider.Registry
+        Mydia.Metadata.Provider.Registry,
+        Mydia.Metadata.Cache,
+        {Task.Supervisor, name: Mydia.TaskSupervisor},
+        Mydia.Hooks.Manager
       ] ++
         client_health_children() ++
         oban_children() ++
@@ -39,6 +42,8 @@ defmodule Mydia.Application do
     opts = [strategy: :one_for_one, name: Mydia.Supervisor]
 
     with {:ok, pid} <- Supervisor.start_link(children, opts) do
+      # Register download client adapters after supervisor has started
+      Mydia.Downloads.register_clients()
       # Register indexer adapters after supervisor has started
       Mydia.Indexers.register_adapters()
       # Register metadata provider adapters

@@ -60,18 +60,13 @@ defmodule MydiaWeb.Router do
     get "/logout", AuthController, :logout
   end
 
-  scope "/", MydiaWeb do
-    pipe_through [:browser, :auth]
-
-    get "/", PageController, :home
-  end
-
   # Authenticated LiveView routes
   scope "/", MydiaWeb do
     pipe_through [:browser, :auth, :require_authenticated]
 
     live_session :authenticated,
       on_mount: [{MydiaWeb.Live.UserAuth, :ensure_authenticated}] do
+      live "/", DashboardLive.Index, :index
       live "/media", MediaLive.Index, :index
       live "/media/:id", MediaLive.Show, :show
       live "/movies", MediaLive.Index, :movies

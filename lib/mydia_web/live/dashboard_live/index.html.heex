@@ -1,0 +1,311 @@
+<Layouts.app flash={@flash}>
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold mb-2">Welcome to Mydia</h1>
+    <p class="text-base-content/70">Your personal media management system</p>
+  </div>
+  
+<!-- Stats Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <!-- Movies Card -->
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title">
+          <.icon name="hero-film" class="w-6 h-6 text-primary" /> Movies
+        </h2>
+        <p class="text-3xl font-bold">{@movie_count}</p>
+        <p class="text-sm text-base-content/60">Total movies</p>
+      </div>
+    </div>
+    
+<!-- TV Shows Card -->
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title">
+          <.icon name="hero-tv" class="w-6 h-6 text-primary" /> TV Shows
+        </h2>
+        <p class="text-3xl font-bold">{@tv_show_count}</p>
+        <p class="text-sm text-base-content/60">Total series</p>
+      </div>
+    </div>
+    
+<!-- Downloads Card -->
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title">
+          <.icon name="hero-arrow-down-tray" class="w-6 h-6 text-primary" /> Downloads
+        </h2>
+        <p class="text-3xl font-bold">0</p>
+        <p class="text-sm text-base-content/60">Active downloads</p>
+      </div>
+    </div>
+    
+<!-- Storage Card -->
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title">
+          <.icon name="hero-circle-stack" class="w-6 h-6 text-primary" /> Storage
+        </h2>
+        <p class="text-3xl font-bold">0 GB</p>
+        <p class="text-sm text-base-content/60">Total storage used</p>
+      </div>
+    </div>
+  </div>
+  
+<!-- Trending Movies -->
+  <div class="mb-8">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-2xl font-bold">Trending Movies</h2>
+      <.link navigate="/movies" class="btn btn-sm btn-ghost">
+        View All <.icon name="hero-arrow-right" class="w-4 h-4 ml-1" />
+      </.link>
+    </div>
+
+    <%= cond do %>
+      <% @trending_movies_loading -> %>
+        <div class="flex items-center justify-center py-12">
+          <span class="loading loading-spinner loading-lg"></span>
+        </div>
+      <% @trending_movies == [] -> %>
+        <div class="alert alert-info">
+          <.icon name="hero-information-circle" class="w-5 h-5" />
+          <span>No trending movies available at the moment.</span>
+        </div>
+      <% true -> %>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <%= for movie <- @trending_movies do %>
+            <div class="card bg-base-100 shadow-sm hover:shadow-md transition-shadow relative">
+              <%= if movie.in_library do %>
+                <div class="absolute top-2 right-2 z-10">
+                  <%= if movie.monitored do %>
+                    <div class="badge badge-success gap-1 shadow-md">
+                      <.icon name="hero-check-circle" class="w-3 h-3" />
+                      <span class="text-xs">In Library</span>
+                    </div>
+                  <% else %>
+                    <div class="badge badge-ghost gap-1 shadow-md">
+                      <.icon name="hero-minus-circle" class="w-3 h-3" />
+                      <span class="text-xs">Unmonitored</span>
+                    </div>
+                  <% end %>
+                </div>
+              <% end %>
+              <figure class="aspect-[2/3] bg-base-300">
+                <%= if movie.poster_path do %>
+                  <img
+                    src={"https://image.tmdb.org/t/p/w500#{movie.poster_path}"}
+                    alt={movie.title}
+                    class="w-full h-full object-cover"
+                  />
+                <% else %>
+                  <div class="flex items-center justify-center w-full h-full">
+                    <.icon name="hero-film" class="w-16 h-16 text-base-content/20" />
+                  </div>
+                <% end %>
+              </figure>
+              <div class="card-body p-3">
+                <h3 class="font-semibold text-sm line-clamp-2" title={movie.title}>
+                  {movie.title}
+                </h3>
+                <%= if movie.year do %>
+                  <p class="text-xs text-base-content/60">{movie.year}</p>
+                <% end %>
+                <%= if not movie.in_library do %>
+                  <button
+                    phx-click="add_to_library"
+                    phx-value-tmdb_id={movie.provider_id}
+                    phx-value-media_type="movie"
+                    disabled={@adding_item_id == to_string(movie.provider_id)}
+                    class="btn btn-primary btn-sm mt-2 w-full"
+                  >
+                    <%= if @adding_item_id == to_string(movie.provider_id) do %>
+                      <span class="loading loading-spinner loading-xs"></span> Adding...
+                    <% else %>
+                      <.icon name="hero-plus" class="w-4 h-4" /> Add to Library
+                    <% end %>
+                  </button>
+                <% else %>
+                  <.link navigate={"/movies/#{movie.id}"} class="btn btn-ghost btn-sm mt-2 w-full">
+                    <.icon name="hero-arrow-right" class="w-4 h-4" /> Go to Movie
+                  </.link>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+    <% end %>
+  </div>
+  
+<!-- Trending TV Shows -->
+  <div class="mb-8">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-2xl font-bold">Trending TV Shows</h2>
+      <.link navigate="/tv" class="btn btn-sm btn-ghost">
+        View All <.icon name="hero-arrow-right" class="w-4 h-4 ml-1" />
+      </.link>
+    </div>
+
+    <%= cond do %>
+      <% @trending_tv_loading -> %>
+        <div class="flex items-center justify-center py-12">
+          <span class="loading loading-spinner loading-lg"></span>
+        </div>
+      <% @trending_tv == [] -> %>
+        <div class="alert alert-info">
+          <.icon name="hero-information-circle" class="w-5 h-5" />
+          <span>No trending TV shows available at the moment.</span>
+        </div>
+      <% true -> %>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <%= for show <- @trending_tv do %>
+            <div class="card bg-base-100 shadow-sm hover:shadow-md transition-shadow relative">
+              <%= if show.in_library do %>
+                <div class="absolute top-2 right-2 z-10">
+                  <%= if show.monitored do %>
+                    <div class="badge badge-success gap-1 shadow-md">
+                      <.icon name="hero-check-circle" class="w-3 h-3" />
+                      <span class="text-xs">In Library</span>
+                    </div>
+                  <% else %>
+                    <div class="badge badge-ghost gap-1 shadow-md">
+                      <.icon name="hero-minus-circle" class="w-3 h-3" />
+                      <span class="text-xs">Unmonitored</span>
+                    </div>
+                  <% end %>
+                </div>
+              <% end %>
+              <figure class="aspect-[2/3] bg-base-300">
+                <%= if show.poster_path do %>
+                  <img
+                    src={"https://image.tmdb.org/t/p/w500#{show.poster_path}"}
+                    alt={show.title}
+                    class="w-full h-full object-cover"
+                  />
+                <% else %>
+                  <div class="flex items-center justify-center w-full h-full">
+                    <.icon name="hero-tv" class="w-16 h-16 text-base-content/20" />
+                  </div>
+                <% end %>
+              </figure>
+              <div class="card-body p-3">
+                <h3 class="font-semibold text-sm line-clamp-2" title={show.title}>
+                  {show.title}
+                </h3>
+                <%= if show.year do %>
+                  <p class="text-xs text-base-content/60">{show.year}</p>
+                <% end %>
+                <%= if not show.in_library do %>
+                  <button
+                    phx-click="add_to_library"
+                    phx-value-tmdb_id={show.provider_id}
+                    phx-value-media_type="tv_show"
+                    disabled={@adding_item_id == to_string(show.provider_id)}
+                    class="btn btn-primary btn-sm mt-2 w-full"
+                  >
+                    <%= if @adding_item_id == to_string(show.provider_id) do %>
+                      <span class="loading loading-spinner loading-xs"></span> Adding...
+                    <% else %>
+                      <.icon name="hero-plus" class="w-4 h-4" /> Add to Library
+                    <% end %>
+                  </button>
+                <% else %>
+                  <.link navigate={"/tv/#{show.id}"} class="btn btn-ghost btn-sm mt-2 w-full">
+                    <.icon name="hero-arrow-right" class="w-4 h-4" /> Go to Show
+                  </.link>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+    <% end %>
+  </div>
+  
+<!-- User Activity Section (for users with monitored content) -->
+  <%= if @recent_episodes != [] || @upcoming_episodes != [] do %>
+    <div class="mb-8">
+      <h2 class="text-2xl font-bold mb-4">Your Activity</h2>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Recent Episodes -->
+        <%= if @recent_episodes != [] do %>
+          <div class="card bg-base-100 shadow-sm">
+            <div class="card-body">
+              <h3 class="card-title text-lg">
+                <.icon name="hero-clock" class="w-5 h-5" /> Recently Aired
+              </h3>
+              <div class="space-y-2">
+                <%= for episode <- @recent_episodes do %>
+                  <div class="flex items-start gap-3 p-2 rounded hover:bg-base-200 transition-colors">
+                    <div class="flex-1 min-w-0">
+                      <p class="font-medium text-sm truncate">{episode.media_item_title}</p>
+                      <p class="text-xs text-base-content/70">
+                        S{String.pad_leading(to_string(episode.season_number), 2, "0")}E{String.pad_leading(
+                          to_string(episode.episode_number),
+                          2,
+                          "0"
+                        )} - {episode.title}
+                      </p>
+                      <p class="text-xs text-base-content/50">
+                        {Calendar.strftime(episode.air_date, "%b %d, %Y")}
+                      </p>
+                    </div>
+                    <%= if episode.has_files do %>
+                      <.icon name="hero-check-circle" class="w-5 h-5 text-success flex-shrink-0" />
+                    <% else %>
+                      <.icon
+                        name="hero-arrow-down-tray"
+                        class="w-5 h-5 text-warning flex-shrink-0"
+                      />
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        <% end %>
+        
+<!-- Upcoming Episodes -->
+        <%= if @upcoming_episodes != [] do %>
+          <div class="card bg-base-100 shadow-sm">
+            <div class="card-body">
+              <h3 class="card-title text-lg">
+                <.icon name="hero-calendar" class="w-5 h-5" /> Coming Soon
+              </h3>
+              <div class="space-y-2">
+                <%= for episode <- @upcoming_episodes do %>
+                  <div class="flex items-start gap-3 p-2 rounded hover:bg-base-200 transition-colors">
+                    <div class="flex-1 min-w-0">
+                      <p class="font-medium text-sm truncate">{episode.media_item_title}</p>
+                      <p class="text-xs text-base-content/70">
+                        S{String.pad_leading(to_string(episode.season_number), 2, "0")}E{String.pad_leading(
+                          to_string(episode.episode_number),
+                          2,
+                          "0"
+                        )} - {episode.title}
+                      </p>
+                      <p class="text-xs text-base-content/50">
+                        {Calendar.strftime(episode.air_date, "%b %d, %Y")}
+                      </p>
+                    </div>
+                  </div>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+  
+<!-- Getting Started (shown when library is empty) -->
+  <%= if @movie_count == 0 && @tv_show_count == 0 do %>
+    <div class="alert alert-info">
+      <.icon name="hero-information-circle" class="w-5 h-5" />
+      <div>
+        <p class="font-semibold">Getting Started</p>
+        <p class="text-sm">
+          Your media library is empty. Start by adding movies or TV shows from the trending content above!
+        </p>
+      </div>
+    </div>
+  <% end %>
+</Layouts.app>

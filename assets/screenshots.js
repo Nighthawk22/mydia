@@ -28,9 +28,15 @@ const screenshots = [
     waitFor: '.main-content, [phx-main]'
   },
   {
-    name: 'dashboard',
-    path: '/media',
-    description: 'Media Library',
+    name: 'movies',
+    path: '/movies',
+    description: 'Movies Library',
+    waitFor: 'h1, h2, main'
+  },
+  {
+    name: 'tv-shows',
+    path: '/tv',
+    description: 'TV Shows Library',
     waitFor: 'h1, h2, main'
   },
   {

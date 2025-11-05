@@ -205,6 +205,34 @@ defmodule Mydia.Metadata.Provider.Relay do
     end
   end
 
+  @impl true
+  def fetch_trending(config, opts \\ []) do
+    media_type = Keyword.get(opts, :media_type)
+    language = Keyword.get(opts, :language, @default_language)
+    page = Keyword.get(opts, :page, 1)
+
+    endpoint = build_trending_endpoint(media_type)
+
+    params = [
+      language: language,
+      page: page
+    ]
+
+    req = HTTP.new_request(config)
+
+    case HTTP.get(req, endpoint, params: params) do
+      {:ok, %{status: 200, body: body}} ->
+        results = parse_search_results(body)
+        {:ok, results}
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, Error.api_error("Fetch trending failed with status #{status}", %{body: body})}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
   ## Private Functions
 
   defp when_valid_query(query, callback) when is_binary(query) and byte_size(query) > 0 do
@@ -224,6 +252,10 @@ defmodule Mydia.Metadata.Provider.Relay do
 
   defp build_images_endpoint(:movie, id), do: "/tmdb/movies/#{id}/images"
   defp build_images_endpoint(:tv_show, id), do: "/tmdb/tv/shows/#{id}/images"
+
+  defp build_trending_endpoint(:movie), do: "/tmdb/movies/trending"
+  defp build_trending_endpoint(:tv_show), do: "/tmdb/tv/trending"
+  defp build_trending_endpoint(_), do: "/tmdb/movies/trending"
 
   defp maybe_add_year(params, nil, _media_type), do: params
   defp maybe_add_year(params, year, :movie), do: params ++ [year: year]

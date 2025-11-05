@@ -5,7 +5,9 @@ defmodule Mydia.Library do
 
   import Ecto.Query, warn: false
   alias Mydia.Repo
-  alias Mydia.Library.MediaFile
+  alias Mydia.Library.{MediaFile, FileAnalyzer, FileParser}
+
+  require Logger
 
   @doc """
   Returns the list of media files.
@@ -163,6 +165,126 @@ defmodule Mydia.Library do
     %{refresh_all: true}
     |> Mydia.Jobs.MetadataRefresh.new()
     |> Oban.insert()
+  end
+
+  @doc """
+  Refreshes file metadata for a specific media file by re-analyzing it.
+
+  Uses both filename parsing and FFprobe analysis, preferring actual file metadata.
+
+  Returns {:ok, updated_media_file} or {:error, reason}.
+  """
+  def refresh_file_metadata(%MediaFile{} = media_file) do
+    if File.exists?(media_file.path) do
+      # Parse filename for fallback metadata
+      filename_metadata = FileParser.parse(Path.basename(media_file.path))
+
+      # Analyze actual file with FFprobe
+      file_metadata =
+        case FileAnalyzer.analyze(media_file.path) do
+          {:ok, metadata} ->
+            Logger.debug("Extracted file metadata via FFprobe",
+              file_id: media_file.id,
+              resolution: metadata.resolution,
+              codec: metadata.codec
+            )
+
+            metadata
+
+          {:error, reason} ->
+            Logger.warning("FFprobe analysis failed, using filename metadata only",
+              file_id: media_file.id,
+              reason: reason
+            )
+
+            %{
+              resolution: nil,
+              codec: nil,
+              audio_codec: nil,
+              bitrate: nil,
+              hdr_format: nil,
+              size: nil
+            }
+        end
+
+      # Merge: prefer file analysis, fall back to filename
+      update_attrs = %{
+        resolution: file_metadata.resolution || filename_metadata.quality.resolution,
+        codec: file_metadata.codec || filename_metadata.quality.codec,
+        audio_codec: file_metadata.audio_codec || filename_metadata.quality.audio,
+        bitrate: file_metadata.bitrate,
+        hdr_format: file_metadata.hdr_format || filename_metadata.quality.hdr_format,
+        size: file_metadata.size || File.stat!(media_file.path).size,
+        verified_at: DateTime.utc_now()
+      }
+
+      case update_media_file(media_file, update_attrs) do
+        {:ok, updated_file} ->
+          Logger.info("Refreshed file metadata",
+            file_id: media_file.id,
+            path: media_file.path,
+            resolution: updated_file.resolution,
+            codec: updated_file.codec,
+            audio: updated_file.audio_codec
+          )
+
+          {:ok, updated_file}
+
+        {:error, changeset} ->
+          Logger.error("Failed to update media file with refreshed metadata",
+            file_id: media_file.id,
+            errors: inspect(changeset.errors)
+          )
+
+          {:error, :update_failed}
+      end
+    else
+      Logger.warning("File does not exist, cannot refresh metadata",
+        file_id: media_file.id,
+        path: media_file.path
+      )
+
+      {:error, :file_not_found}
+    end
+  end
+
+  @doc """
+  Refreshes file metadata for a media file by ID.
+
+  Returns {:ok, updated_media_file} or {:error, reason}.
+  """
+  def refresh_file_metadata_by_id(media_file_id) do
+    media_file = get_media_file!(media_file_id)
+    refresh_file_metadata(media_file)
+  end
+
+  @doc """
+  Refreshes file metadata for all media files in the library.
+
+  This can be a long-running operation. Returns the count of successfully refreshed files.
+  """
+  def refresh_all_file_metadata do
+    media_files = list_media_files()
+
+    Logger.info("Starting bulk metadata refresh", total_files: length(media_files))
+
+    results =
+      Enum.map(media_files, fn file ->
+        case refresh_file_metadata(file) do
+          {:ok, _} -> :ok
+          {:error, _} -> :error
+        end
+      end)
+
+    success_count = Enum.count(results, &(&1 == :ok))
+    error_count = Enum.count(results, &(&1 == :error))
+
+    Logger.info("Completed bulk metadata refresh",
+      success: success_count,
+      errors: error_count
+    )
+
+    {:ok, success_count}
   end
 
   defp maybe_preload(query, nil), do: query

@@ -80,7 +80,11 @@ config :mydia, Oban,
        # Scan library every hour
        {"0 * * * *", Mydia.Jobs.LibraryScanner},
        # Monitor downloads every 2 minutes
-       {"*/2 * * * *", Mydia.Jobs.DownloadMonitor}
+       {"*/2 * * * *", Mydia.Jobs.DownloadMonitor},
+       # Search for monitored movies every 30 minutes
+       {"*/30 * * * *", Mydia.Jobs.MovieSearch, args: %{"mode" => "all_monitored"}},
+       # Search for monitored TV shows every 15 minutes
+       {"*/15 * * * *", Mydia.Jobs.TVShowSearch, args: %{"mode" => "all_monitored"}}
      ]}
   ]
 

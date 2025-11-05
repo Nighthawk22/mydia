@@ -53,8 +53,7 @@ defmodule Mydia.Factory do
       media_item: build(:media_item),
       title: sequence(:download_title, &"Download #{&1}"),
       download_client_id: Ecto.UUID.generate(),
-      status: "downloading",
-      progress: 50.0,
+      download_client: "transmission",
       indexer: "test-indexer"
     }
   end

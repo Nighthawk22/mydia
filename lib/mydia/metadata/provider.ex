@@ -297,6 +297,11 @@ defmodule Mydia.Metadata.Provider do
           language: String.t()
         ]
 
+  @type trending_opts :: [
+          language: String.t(),
+          page: integer()
+        ]
+
   @doc """
   Tests the connection to the metadata provider.
 
@@ -402,4 +407,27 @@ defmodule Mydia.Metadata.Provider do
               season_opts()
             ) ::
               {:ok, season()} | {:error, Error.t()}
+
+  @doc """
+  Fetches trending media for a specific media type.
+
+  Returns `{:ok, [search_result]}` with a list of trending media,
+  or `{:error, reason}` if an error occurs.
+
+  ## Options
+
+    * `:media_type` - Media type to fetch (`:movie` or `:tv_show`, required)
+    * `:language` - Language for results (default: "en-US")
+    * `:page` - Page number for pagination (default: 1)
+
+  ## Examples
+
+      iex> fetch_trending(config, media_type: :movie)
+      {:ok, [%{provider_id: "603", title: "The Matrix", ...}]}
+
+      iex> fetch_trending(config, media_type: :tv_show)
+      {:ok, [%{provider_id: "1396", title: "Breaking Bad", ...}]}
+  """
+  @callback fetch_trending(config(), trending_opts()) ::
+              {:ok, [search_result()]} | {:error, Error.t()}
 end

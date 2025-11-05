@@ -52,9 +52,17 @@ defmodule Mydia.Media do
   Creates a media item.
   """
   def create_media_item(attrs \\ %{}) do
-    %MediaItem{}
-    |> MediaItem.changeset(attrs)
-    |> Repo.insert()
+    with {:ok, media_item} <-
+           %MediaItem{}
+           |> MediaItem.changeset(attrs)
+           |> Repo.insert() do
+      # Execute after_media_added hooks asynchronously
+      Mydia.Hooks.execute_async("after_media_added", %{
+        media_item: serialize_media_item(media_item)
+      })
+
+      {:ok, media_item}
+    end
   end
 
   @doc """
@@ -153,6 +161,34 @@ defmodule Mydia.Media do
     MediaItem
     |> where([m], m.type == "tv_show")
     |> Repo.aggregate(:count)
+  end
+
+  @doc """
+  Returns a map of TMDB IDs to library status for efficient lookup.
+
+  Returns a map where keys are TMDB IDs and values are maps with:
+  - `:in_library` - boolean
+  - `:monitored` - boolean (if in library)
+  - `:type` - "movie" or "tv_show" (if in library)
+  - `:id` - database ID (if in library)
+
+  ## Examples
+
+      iex> get_library_status_map()
+      %{
+        "12345" => %{in_library: true, monitored: true, type: "movie", id: 1},
+        "67890" => %{in_library: true, monitored: false, type: "tv_show", id: 2}
+      }
+  """
+  def get_library_status_map do
+    MediaItem
+    |> select(
+      [m],
+      {m.tmdb_id, %{in_library: true, monitored: m.monitored, type: m.type, id: m.id}}
+    )
+    |> where([m], not is_nil(m.tmdb_id))
+    |> Repo.all()
+    |> Map.new()
   end
 
   ## Episodes
@@ -288,7 +324,7 @@ defmodule Mydia.Media do
 
     has_downloads =
       length(media_item.downloads) > 0 &&
-        Enum.any?(media_item.downloads, &(&1.status in [:pending, :downloading]))
+        Enum.any?(media_item.downloads, &download_active?/1)
 
     status =
       cond do
@@ -316,7 +352,7 @@ defmodule Mydia.Media do
       has_active_downloads =
         monitored_episodes
         |> Enum.any?(fn ep ->
-          Enum.any?(ep.downloads, &(&1.status in [:pending, :downloading]))
+          Enum.any?(ep.downloads, &download_active?/1)
         end)
 
       all_upcoming =
@@ -633,4 +669,23 @@ defmodule Mydia.Media do
   defp maybe_preload(query, nil), do: query
   defp maybe_preload(query, []), do: query
   defp maybe_preload(query, preloads), do: preload(query, ^preloads)
+
+  # Helper function to check if a download is active
+  # Downloads are active if they haven't completed and haven't failed
+  defp download_active?(download) do
+    is_nil(download.completed_at) && is_nil(download.error_message)
+  end
+
+  # Serialize media item for hooks
+  defp serialize_media_item(%MediaItem{} = media_item) do
+    %{
+      id: media_item.id,
+      type: media_item.type,
+      title: media_item.title,
+      tmdb_id: media_item.tmdb_id,
+      year: media_item.year,
+      monitored: media_item.monitored,
+      metadata: media_item.metadata
+    }
+  end
 end

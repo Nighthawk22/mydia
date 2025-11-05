@@ -5,6 +5,24 @@ This is a web application written using the Phoenix web framework.
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 
+### Development environment
+
+This project uses Docker Compose for development. **Always** use the `./dev` command wrapper instead of running commands directly:
+
+- **Service management**: `./dev up -d`, `./dev down`, `./dev restart`, `./dev logs -f`
+- **Interactive shells**: `./dev shell`, `./dev iex`, `./dev bash`
+- **Mix commands**: `./dev mix <args>` (e.g., `./dev mix test`, `./dev mix ecto.migrate`)
+- **Common shortcuts**: `./dev test`, `./dev format`, `./dev deps.get`, `./dev ecto.migrate`
+
+The `./dev` script automatically starts services if they're not running and provides helpful feedback. Run `./dev` without arguments to see all available commands.
+
+**Examples**:
+- `./dev up -d` - Start services in background
+- `./dev test` - Run all tests (automatically sets up test database)
+- `./dev mix ecto.migrate` - Run database migrations
+- `./dev shell` - Open interactive shell in app container
+- `./dev logs -f` - Follow application logs
+
 ### Phoenix v1.8 guidelines
 
 - **Always** begin your LiveView templates with `<Layouts.app flash={@flash} ...>` which wraps all inner content

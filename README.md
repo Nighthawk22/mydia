@@ -6,12 +6,33 @@ A modern, self-hosted media management platform for tracking, organizing, and mo
 
 ## ✨ Features
 
-- 📺 **Smart Library Management** – Track TV shows, movies, and episodes with rich metadata
-- 🔔 **Release Monitoring** – Never miss new episodes with calendar views and notifications
-- 🔍 **Metadata Enrichment** – Automatic metadata fetching and matching
-- ⬇️ **Download Integration** – Seamless torrent client connectivity (Transmission, qBittorrent)
-- 🎯 **Episode Tracking** – Monitor individual episodes or entire seasons
-- 🎨 **Modern UI** – Built with LiveView, Tailwind CSS, and DaisyUI
+### Core Library Management
+- 📺 **Smart Media Library** – Track TV shows, movies, and episodes with rich metadata from TMDB/TVDB
+- 🔍 **Media Discovery** – Search and add content with automatic metadata matching and disambiguation
+- 📁 **Library Scanner** – Automatic scanning and import of existing media files
+- 🎬 **Detailed Media Pages** – View comprehensive information including cast, crew, seasons, and episodes
+- 📊 **Quality Profiles** – Customizable quality preferences for automated downloads
+
+### Download Management
+- ⬇️ **Download Client Integration** – Seamless connectivity with qBittorrent and Transmission
+- 🔎 **Indexer Support** – Integrated search via Prowlarr for finding releases
+- 🤖 **Automatic Search & Download** – Background jobs to automatically find and download monitored content
+- 🎯 **Smart Release Ranking** – Pluggable scoring system to select the best matching releases
+- 📥 **Manual Search** – Browse and select specific releases from the UI
+- 📋 **Download Queue** – Real-time monitoring of active downloads with progress tracking
+
+### Monitoring & Tracking
+- 🔔 **Release Calendar** – Track upcoming and past releases with timeline view
+- 👁️ **Episode Monitoring** – Monitor individual episodes, seasons, or entire series
+- 📊 **Missing Episodes** – Identify gaps in your library
+- ⏱️ **Background Jobs** – Automated scanning, searching, and importing with Oban
+
+### System & Configuration
+- ⚙️ **Admin Dashboard** – System status, configuration management, and health monitoring
+- 🔧 **Flexible Configuration** – Environment variables, YAML files, or database settings with clear precedence
+- 🎨 **Modern UI** – Built with Phoenix LiveView, Tailwind CSS, and DaisyUI
+- 🐳 **Docker Ready** – Pre-built images for amd64 and arm64 platforms
+- 🔐 **Local Authentication** – Built-in user management (OIDC support coming soon)
 
 ## 📸 Screenshots
 

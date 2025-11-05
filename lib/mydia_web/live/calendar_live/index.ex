@@ -4,6 +4,10 @@ defmodule MydiaWeb.CalendarLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Mydia.PubSub, "downloads")
+    end
+
     today = Date.utc_today()
 
     {:ok,
@@ -82,6 +86,13 @@ defmodule MydiaWeb.CalendarLive.Index do
       _ ->
         {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_info({:download_updated, _download_id}, socket) do
+    # Just trigger a re-render to update the downloads counter in the sidebar
+    # The counter will be recalculated when the layout renders
+    {:noreply, socket}
   end
 
   defp load_calendar_items(socket) do

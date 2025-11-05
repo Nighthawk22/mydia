@@ -17,6 +17,7 @@ defmodule Mydia.Jobs.MediaImport do
   require Logger
   alias Mydia.{Downloads, Library, Settings}
   alias Mydia.Downloads.Client
+  alias Mydia.Library.{FileAnalyzer, FileParser}
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"download_id" => download_id} = args}) do
@@ -24,10 +25,10 @@ defmodule Mydia.Jobs.MediaImport do
 
     download = Downloads.get_download!(download_id, preload: [:media_item, :episode])
 
-    if download.status != "completed" do
+    if is_nil(download.completed_at) do
       Logger.warning("Download not completed, skipping import",
         download_id: download_id,
-        status: download.status
+        completed_at: download.completed_at
       )
 
       {:ok, :skipped}
@@ -386,13 +387,61 @@ defmodule Mydia.Jobs.MediaImport do
   end
 
   defp create_media_file_record(path, size, download) do
+    # Extract metadata from filename first (as fallback)
+    filename_metadata = FileParser.parse(Path.basename(path))
+
+    Logger.debug("Parsed filename metadata",
+      path: path,
+      resolution: filename_metadata.quality.resolution,
+      codec: filename_metadata.quality.codec,
+      audio: filename_metadata.quality.audio
+    )
+
+    # Extract technical metadata from the actual file using FFprobe
+    file_metadata =
+      case FileAnalyzer.analyze(path) do
+        {:ok, metadata} ->
+          Logger.debug("Extracted file metadata via FFprobe",
+            path: path,
+            resolution: metadata.resolution,
+            codec: metadata.codec,
+            audio: metadata.audio_codec
+          )
+
+          metadata
+
+        {:error, reason} ->
+          Logger.warning("Failed to analyze file with FFprobe, using filename metadata only",
+            path: path,
+            reason: reason
+          )
+
+          # Continue with empty metadata - we'll use filename fallback below
+          %{
+            resolution: nil,
+            codec: nil,
+            audio_codec: nil,
+            bitrate: nil,
+            hdr_format: nil,
+            size: size
+          }
+      end
+
+    # Merge metadata: prefer actual file metadata, fall back to filename parsing
     attrs = %{
       path: path,
-      size: size,
+      size: file_metadata.size || size,
+      resolution: file_metadata.resolution || filename_metadata.quality.resolution,
+      codec: file_metadata.codec || filename_metadata.quality.codec,
+      audio_codec: file_metadata.audio_codec || filename_metadata.quality.audio,
+      bitrate: file_metadata.bitrate,
+      hdr_format: file_metadata.hdr_format || filename_metadata.quality.hdr_format,
       verified_at: DateTime.utc_now(),
       metadata: %{
         imported_from_download_id: download.id,
-        imported_at: DateTime.utc_now()
+        imported_at: DateTime.utc_now(),
+        source: filename_metadata.quality.source,
+        release_group: filename_metadata.release_group
       }
     }
 
@@ -417,7 +466,13 @@ defmodule Mydia.Jobs.MediaImport do
 
     case Library.create_media_file(attrs) do
       {:ok, media_file} ->
-        Logger.info("Created media file record", path: path, id: media_file.id)
+        Logger.info("Created media file record",
+          path: path,
+          id: media_file.id,
+          resolution: media_file.resolution,
+          codec: media_file.codec
+        )
+
         {:ok, media_file}
 
       {:error, changeset} ->

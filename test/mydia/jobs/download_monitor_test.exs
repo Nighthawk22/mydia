@@ -18,7 +18,7 @@ defmodule Mydia.Jobs.DownloadMonitorTest do
 
       # Create an active download
       media_item = media_item_fixture()
-      download_fixture(%{media_item_id: media_item.id, status: "downloading"})
+      download_fixture(%{media_item_id: media_item.id})
 
       assert :ok = perform_job(DownloadMonitor, %{})
     end
@@ -27,55 +27,62 @@ defmodule Mydia.Jobs.DownloadMonitorTest do
       setup_runtime_config([build_test_client_config()])
       media_item = media_item_fixture()
 
-      # Create downloads with different statuses
-      download_fixture(%{media_item_id: media_item.id, status: "pending"})
-      download_fixture(%{media_item_id: media_item.id, status: "downloading", progress: 50})
-      download_fixture(%{media_item_id: media_item.id, status: "completed"})
+      # Create downloads with different completion states
+      download_fixture(%{media_item_id: media_item.id})
+      download_fixture(%{media_item_id: media_item.id})
+      download_fixture(%{media_item_id: media_item.id, completed_at: DateTime.utc_now()})
 
       assert :ok = perform_job(DownloadMonitor, %{})
     end
 
-    test "processes only active downloads (pending and downloading)" do
+    test "processes active and completed downloads" do
       setup_runtime_config([build_test_client_config()])
       media_item = media_item_fixture()
 
-      # Create active and inactive downloads
-      pending = download_fixture(%{media_item_id: media_item.id, status: "pending"})
-      downloading = download_fixture(%{media_item_id: media_item.id, status: "downloading"})
-      download_fixture(%{media_item_id: media_item.id, status: "completed"})
-      download_fixture(%{media_item_id: media_item.id, status: "failed"})
-      download_fixture(%{media_item_id: media_item.id, status: "cancelled"})
+      # Create active downloads (will be removed since they don't exist in client)
+      active1 = download_fixture(%{media_item_id: media_item.id})
+      active2 = download_fixture(%{media_item_id: media_item.id})
+
+      # Create completed and failed downloads (will be kept)
+      completed =
+        download_fixture(%{media_item_id: media_item.id, completed_at: DateTime.utc_now()})
+
+      failed = download_fixture(%{media_item_id: media_item.id, error_message: "Failed"})
 
       # Job should complete successfully
       assert :ok = perform_job(DownloadMonitor, %{})
 
-      # Verify active downloads still exist with their status
-      # (they remain unchanged since we don't have a real download client)
-      assert Downloads.get_download!(pending.id).status == "pending"
-      assert Downloads.get_download!(downloading.id).status == "downloading"
+      # Active downloads should be removed (missing from client)
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(active1.id) end
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(active2.id) end
+
+      # Completed and failed downloads should still exist
+      assert Downloads.get_download!(completed.id)
+      assert Downloads.get_download!(failed.id)
     end
 
-    test "skips downloads without an assigned client" do
+    test "removes downloads without an assigned client" do
       setup_runtime_config([build_test_client_config()])
       media_item = media_item_fixture()
 
-      # Create download without a download_client
+      # Create download without a download_client (will be removed as missing)
       download =
         download_fixture(%{
           media_item_id: media_item.id,
-          status: "downloading",
           download_client: nil
         })
 
+      download_id = download.id
+
       assert :ok = perform_job(DownloadMonitor, %{})
 
-      # Download should remain unchanged
-      reloaded = Downloads.get_download!(download.id)
-      assert reloaded.status == "downloading"
-      assert is_nil(reloaded.download_client)
+      # Download should be removed since it has no client
+      assert_raise Ecto.NoResultsError, fn ->
+        Downloads.get_download!(download_id)
+      end
     end
 
-    test "handles download client not found in configuration" do
+    test "removes downloads with non-existent client" do
       setup_runtime_config([build_test_client_config()])
       media_item = media_item_fixture()
 
@@ -83,45 +90,49 @@ defmodule Mydia.Jobs.DownloadMonitorTest do
       download =
         download_fixture(%{
           media_item_id: media_item.id,
-          status: "downloading",
           download_client: "NonExistentClient",
           download_client_id: "test123"
         })
 
+      download_id = download.id
+
       assert :ok = perform_job(DownloadMonitor, %{})
 
-      # Download should remain unchanged
-      reloaded = Downloads.get_download!(download.id)
-      assert reloaded.status == "downloading"
+      # Download should be removed since client doesn't exist
+      assert_raise Ecto.NoResultsError, fn ->
+        Downloads.get_download!(download_id)
+      end
     end
 
     test "processes multiple downloads in a single run" do
       setup_runtime_config([build_test_client_config()])
       media_item = media_item_fixture()
 
-      # Create multiple active downloads
-      _d1 =
+      # Create multiple downloads (will be removed since they don't exist in client)
+      d1 =
         download_fixture(%{
           media_item_id: media_item.id,
-          status: "downloading",
           title: "Download 1"
         })
 
-      _d2 =
+      d2 =
         download_fixture(%{
           media_item_id: media_item.id,
-          status: "downloading",
           title: "Download 2"
         })
 
-      _d3 =
-        download_fixture(%{media_item_id: media_item.id, status: "pending", title: "Download 3"})
+      d3 = download_fixture(%{media_item_id: media_item.id, title: "Download 3"})
 
       # Should process all downloads without crashing
       assert :ok = perform_job(DownloadMonitor, %{})
+
+      # All downloads should be removed (missing from client)
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(d1.id) end
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(d2.id) end
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(d3.id) end
     end
 
-    test "only processes enabled download clients" do
+    test "removes downloads from disabled clients" do
       # Configure a disabled client
       disabled_client = %{
         build_test_client_config()
@@ -135,16 +146,18 @@ defmodule Mydia.Jobs.DownloadMonitorTest do
       download =
         download_fixture(%{
           media_item_id: media_item.id,
-          status: "downloading",
           download_client: "DisabledClient",
           download_client_id: "test123"
         })
 
+      download_id = download.id
+
       assert :ok = perform_job(DownloadMonitor, %{})
 
-      # Download should remain unchanged since client is disabled
-      reloaded = Downloads.get_download!(download.id)
-      assert reloaded.status == "downloading"
+      # Download should be removed since disabled clients are not queried
+      assert_raise Ecto.NoResultsError, fn ->
+        Downloads.get_download!(download_id)
+      end
     end
 
     test "sorts download clients by priority" do
@@ -169,19 +182,180 @@ defmodule Mydia.Jobs.DownloadMonitorTest do
 
       download_fixture(%{
         media_item_id: media_item.id,
-        status: "downloading",
         download_client: "qBit",
         download_client_id: "hash1"
       })
 
       download_fixture(%{
         media_item_id: media_item.id,
-        status: "downloading",
         download_client: "Trans",
         download_client_id: "id2"
       })
 
       assert :ok = perform_job(DownloadMonitor, %{})
+    end
+  end
+
+  describe "missing download detection" do
+    test "removes downloads that no longer exist in any client" do
+      # Setup with no actual clients (simulates missing downloads)
+      setup_runtime_config([])
+
+      media_item = media_item_fixture()
+
+      # Create a download that exists in DB but not in any client
+      download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          download_client: "test-client",
+          download_client_id: "missing-123"
+        })
+
+      download_id = download.id
+
+      # Verify download exists before job runs
+      assert Downloads.get_download!(download_id)
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Download should be removed from database
+      assert_raise Ecto.NoResultsError, fn ->
+        Downloads.get_download!(download_id)
+      end
+    end
+
+    test "does not remove downloads that are already completed" do
+      setup_runtime_config([])
+
+      media_item = media_item_fixture()
+
+      # Create a completed download
+      download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          completed_at: DateTime.utc_now()
+        })
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Completed download should still exist (status will be "completed")
+      assert Downloads.get_download!(download.id)
+    end
+
+    test "does not remove downloads that have error messages" do
+      setup_runtime_config([])
+
+      media_item = media_item_fixture()
+
+      # Create a failed download
+      download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          error_message: "Download failed"
+        })
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Failed download should still exist (status will be "failed")
+      assert Downloads.get_download!(download.id)
+    end
+
+    test "removes multiple missing downloads in a single run" do
+      setup_runtime_config([])
+
+      media_item = media_item_fixture()
+
+      # Create multiple downloads that don't exist in any client
+      download1 =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          download_client: "test-client",
+          download_client_id: "missing-1"
+        })
+
+      download2 =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          download_client: "test-client",
+          download_client_id: "missing-2"
+        })
+
+      download3 =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          download_client: "test-client",
+          download_client_id: "missing-3"
+        })
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # All missing downloads should be removed
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(download1.id) end
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(download2.id) end
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(download3.id) end
+    end
+
+    test "handles mix of missing, active, and completed downloads" do
+      setup_runtime_config([])
+
+      media_item = media_item_fixture()
+
+      # Create a missing download (will be removed)
+      missing_download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          title: "Missing Download"
+        })
+
+      # Create a completed download (will be kept)
+      completed_download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          title: "Completed Download",
+          completed_at: DateTime.utc_now()
+        })
+
+      # Create a failed download (will be kept)
+      failed_download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          title: "Failed Download",
+          error_message: "Download failed in client"
+        })
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Only the missing download should be removed
+      assert_raise Ecto.NoResultsError, fn -> Downloads.get_download!(missing_download.id) end
+
+      # Completed and failed downloads should still exist
+      assert Downloads.get_download!(completed_download.id)
+      assert Downloads.get_download!(failed_download.id)
+    end
+
+    test "broadcasts download update when removing missing download" do
+      setup_runtime_config([])
+
+      media_item = media_item_fixture()
+
+      download =
+        download_fixture(%{
+          media_item_id: media_item.id
+        })
+
+      # Subscribe to download updates
+      Phoenix.PubSub.subscribe(Mydia.PubSub, "downloads")
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Should receive update notification
+      assert_received {:download_updated, _download_id}
     end
   end
 

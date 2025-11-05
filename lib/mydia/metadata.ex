@@ -233,4 +233,66 @@ defmodule Mydia.Metadata do
       }
     }
   end
+
+  @doc """
+  Fetches trending media for a specific media type.
+
+  ## Parameters
+    - `config` - Provider configuration map
+    - `opts` - Trending options (see `Mydia.Metadata.Provider` for available options)
+
+  ## Options
+    * `:media_type` - Media type to fetch (`:movie` or `:tv_show`, required)
+    * `:language` - Language for results (default: "en-US")
+    * `:page` - Page number for pagination (default: 1)
+
+  ## Examples
+
+      iex> config = %{type: :metadata_relay, base_url: "https://metadata-relay.dorninger.co"}
+      iex> Mydia.Metadata.fetch_trending(config, media_type: :movie)
+      {:ok, [%{provider_id: "603", title: "Trending Movie", ...}]}
+  """
+  def fetch_trending(%{type: type} = config, opts \\ []) when is_atom(type) do
+    with {:ok, provider} <- Provider.Registry.get_provider(type) do
+      provider.fetch_trending(config, opts)
+    end
+  end
+
+  @doc """
+  Fetches trending movies using the default relay configuration.
+
+  This is a convenience function that uses the default metadata relay config.
+  Results are cached for 1 hour to reduce API calls.
+
+  ## Examples
+
+      iex> Mydia.Metadata.trending_movies()
+      {:ok, [%{provider_id: "603", title: "Trending Movie", ...}]}
+  """
+  def trending_movies do
+    alias Mydia.Metadata.Cache
+
+    Cache.fetch("trending_movies", fn ->
+      fetch_trending(default_relay_config(), media_type: :movie)
+    end)
+  end
+
+  @doc """
+  Fetches trending TV shows using the default relay configuration.
+
+  This is a convenience function that uses the default metadata relay config.
+  Results are cached for 1 hour to reduce API calls.
+
+  ## Examples
+
+      iex> Mydia.Metadata.trending_tv_shows()
+      {:ok, [%{provider_id: "1396", title: "Trending Show", ...}]}
+  """
+  def trending_tv_shows do
+    alias Mydia.Metadata.Cache
+
+    Cache.fetch("trending_tv_shows", fn ->
+      fetch_trending(default_relay_config(), media_type: :tv_show)
+    end)
+  end
 end

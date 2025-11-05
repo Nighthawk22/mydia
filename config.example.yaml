@@ -1,0 +1,77 @@
+# Mydia Configuration Example
+# Copy this file to /config/config.yaml and adjust settings as needed
+
+# Server configuration
+server:
+  port: 4000
+  host: "0.0.0.0"
+  url_scheme: "http"
+  url_host: "localhost"
+  # These should be generated securely - see documentation
+  # secret_key_base: "your-secret-key-base"
+  # guardian_secret_key: "your-guardian-secret-key"
+
+# Database configuration
+database:
+  path: "/data/mydia.db"
+  pool_size: 5
+
+# Authentication
+auth:
+  local_enabled: true
+  oidc_enabled: false
+
+# Media library paths
+media:
+  movies_path: "/media/movies"
+  tv_path: "/media/tv"
+  scan_interval_hours: 1
+
+# Downloads monitoring
+downloads:
+  monitor_interval_minutes: 2
+
+# Hooks system (for extensibility)
+hooks:
+  # Enable or disable the hooks system
+  enabled: true
+  # Directory where hook scripts are located
+  # Relative paths are resolved relative to the database directory
+  # In development: "hooks" -> ./hooks (relative to project root)
+  # In production with database at /data/mydia.db: "hooks" -> /data/hooks
+  directory: "hooks"
+  # Default timeout for hook execution in milliseconds
+  default_timeout_ms: 5000
+  # Maximum allowed timeout for hooks in milliseconds
+  max_timeout_ms: 30000
+
+# Logging
+logging:
+  level: "info"
+  format: "[$level] $message\n"
+
+# Background job processing
+oban:
+  poll_interval: 1000
+  max_age_days: 7
+
+# Download clients configuration
+download_clients:
+  - name: "Transmission"
+    type: "transmission"
+    enabled: true
+    priority: 1
+    host: "transmission"
+    port: 9091
+    use_ssl: false
+    username: ""
+    password: ""
+
+# Indexers configuration
+indexers:
+  - name: "Prowlarr"
+    type: "prowlarr"
+    enabled: true
+    priority: 1
+    base_url: "http://prowlarr:9696"
+    api_key: "your-prowlarr-api-key"

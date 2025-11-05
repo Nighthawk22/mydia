@@ -101,7 +101,19 @@ defmodule Mydia.Library.MetadataEnricher do
     case fetch_full_metadata(provider_id, media_type, config) do
       {:ok, full_metadata} ->
         attrs = build_media_item_attrs(full_metadata, media_type, match_result)
-        Media.create_media_item(attrs)
+
+        case Media.create_media_item(attrs) do
+          {:ok, media_item} ->
+            # For TV shows, always fetch all episodes
+            if media_type == :tv_show do
+              Media.refresh_episodes_for_tv_show(media_item, season_monitoring: "all")
+            end
+
+            {:ok, media_item}
+
+          error ->
+            error
+        end
 
       {:error, reason} ->
         {:error, {:metadata_fetch_failed, reason}}

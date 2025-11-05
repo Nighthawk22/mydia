@@ -360,9 +360,21 @@ defmodule Mydia.Downloads.Client.Transmission do
   end
 
   defp parse_torrent_status(torrent) do
+    # Build the full path to the torrent's files
+    # Transmission stores files in downloadDir/torrentName/
+    download_dir = torrent["downloadDir"] || ""
+    torrent_name = torrent["name"] || ""
+
+    save_path =
+      if download_dir != "" and torrent_name != "" do
+        Path.join(download_dir, torrent_name)
+      else
+        download_dir
+      end
+
     %{
       id: to_string(torrent["id"]),
-      name: torrent["name"] || "",
+      name: torrent_name,
       state: parse_state(torrent["status"]),
       progress: (torrent["percentDone"] || 0.0) * 100.0,
       download_speed: torrent["rateDownload"] || 0,
@@ -372,7 +384,7 @@ defmodule Mydia.Downloads.Client.Transmission do
       size: torrent["totalSize"] || 0,
       eta: parse_eta(torrent["eta"]),
       ratio: torrent["uploadRatio"] || 0.0,
-      save_path: torrent["downloadDir"] || "",
+      save_path: save_path,
       added_at: parse_timestamp(torrent["addedDate"]),
       completed_at: parse_timestamp(torrent["doneDate"])
     }

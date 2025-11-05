@@ -17,6 +17,7 @@ defmodule MydiaWeb.DownloadsLive.Index do
      |> assign(:page_title, "Activity")
      |> assign(:active_tab, :queue)
      |> assign(:selected_ids, MapSet.new())
+     |> assign(:selection_mode, false)
      |> assign(:page, 0)
      |> assign(:has_more, true)
      |> load_downloads()}
@@ -35,6 +36,7 @@ defmodule MydiaWeb.DownloadsLive.Index do
      socket
      |> assign(:active_tab, tab_atom)
      |> assign(:selected_ids, MapSet.new())
+     |> assign(:selection_mode, false)
      |> assign(:page, 0)
      |> load_downloads()}
   end
@@ -47,55 +49,132 @@ defmodule MydiaWeb.DownloadsLive.Index do
         MapSet.put(socket.assigns.selected_ids, id)
       end
 
-    {:noreply, assign(socket, :selected_ids, selected_ids)}
+    {:noreply,
+     socket
+     |> assign(:selected_ids, selected_ids)
+     |> assign(:selection_mode, true)}
   end
 
   def handle_event("toggle_select_all", _params, socket) do
-    selected_ids =
-      if MapSet.size(socket.assigns.selected_ids) > 0 do
-        MapSet.new()
-      else
-        # Select all visible downloads
-        downloads = get_current_downloads(socket)
-        downloads |> Enum.map(& &1.id) |> MapSet.new()
-      end
+    if socket.assigns.selection_mode and MapSet.size(socket.assigns.selected_ids) > 0 do
+      # Exit selection mode and clear selections
+      {:noreply,
+       socket
+       |> assign(:selected_ids, MapSet.new())
+       |> assign(:selection_mode, false)
+       |> reload_stream()}
+    else
+      # Enter selection mode and select all visible downloads
+      downloads = get_current_downloads(socket)
+      selected_ids = downloads |> Enum.map(& &1.id) |> MapSet.new()
 
-    {:noreply, assign(socket, :selected_ids, selected_ids)}
+      {:noreply,
+       socket
+       |> assign(:selected_ids, selected_ids)
+       |> assign(:selection_mode, true)
+       |> reload_stream()}
+    end
+  end
+
+  defp reload_stream(socket) do
+    downloads = get_current_downloads(socket)
+    stream(socket, :downloads, downloads, reset: true)
   end
 
   def handle_event("cancel_download", %{"id" => id}, socket) do
     download = Downloads.get_download!(id)
 
-    case Downloads.cancel_download(download) do
-      {:ok, _updated} ->
+    case Downloads.cancel_download(download, delete_files: false) do
+      {:ok, _} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Download cancelled")
+         |> put_flash(:info, "Download cancelled and removed from client")
          |> load_downloads()}
 
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Failed to cancel download")}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to cancel download: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("pause_download", %{"id" => id}, socket) do
+    download = Downloads.get_download!(id)
+
+    case Downloads.pause_download(download) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Download paused")
+         |> load_downloads()}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to pause download: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("resume_download", %{"id" => id}, socket) do
+    download = Downloads.get_download!(id)
+
+    case Downloads.resume_download(download) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Download resumed")
+         |> load_downloads()}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to resume download: #{inspect(reason)}")}
     end
   end
 
   def handle_event("retry_download", %{"id" => id}, socket) do
-    download = Downloads.get_download!(id)
+    download = Downloads.get_download!(id, preload: [:media_item, :episode])
 
-    case Downloads.update_download(download, %{status: "pending", error_message: nil}) do
-      {:ok, _updated} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Download queued for retry")
-         |> load_downloads()}
+    # Clear error message if any
+    case Downloads.update_download(download, %{error_message: nil}) do
+      {:ok, updated} ->
+        # Re-add to client using the original download URL
+        search_result = %Mydia.Indexers.SearchResult{
+          download_url: updated.download_url,
+          title: updated.title,
+          indexer: updated.indexer,
+          size: updated.metadata["size"],
+          seeders: updated.metadata["seeders"],
+          leechers: updated.metadata["leechers"],
+          quality: updated.metadata["quality"]
+        }
+
+        opts =
+          []
+          |> maybe_add_opt(:media_item_id, updated.media_item_id)
+          |> maybe_add_opt(:episode_id, updated.episode_id)
+          |> maybe_add_opt(:client_name, updated.download_client)
+
+        # Delete old download record and create new one
+        Downloads.delete_download(updated)
+
+        case Downloads.initiate_download(search_result, opts) do
+          {:ok, _new_download} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Download re-initiated")
+             |> load_downloads()}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Failed to retry download: #{inspect(reason)}")}
+        end
 
       {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Failed to retry download")}
+        {:noreply, put_flash(socket, :error, "Failed to update download")}
     end
   end
 
   def handle_event("delete_download", %{"id" => id}, socket) do
     download = Downloads.get_download!(id)
 
+    # First try to remove from client (ignore errors if already removed)
+    _ = Downloads.cancel_download(download, delete_files: true)
+
+    # Then delete from database
     case Downloads.delete_download(download) do
       {:ok, _deleted} ->
         {:noreply,
@@ -108,13 +187,38 @@ defmodule MydiaWeb.DownloadsLive.Index do
     end
   end
 
+  defp maybe_add_opt(opts, _key, nil), do: opts
+  defp maybe_add_opt(opts, key, value), do: Keyword.put(opts, key, value)
+
   def handle_event("batch_retry", _params, socket) do
     selected_ids = MapSet.to_list(socket.assigns.selected_ids)
 
     results =
       Enum.map(selected_ids, fn id ->
-        download = Downloads.get_download!(id)
-        Downloads.update_download(download, %{status: "pending", error_message: nil})
+        try do
+          download = Downloads.get_download!(id, preload: [:media_item, :episode])
+
+          search_result = %Mydia.Indexers.SearchResult{
+            download_url: download.download_url,
+            title: download.title,
+            indexer: download.indexer,
+            size: download.metadata["size"],
+            seeders: download.metadata["seeders"],
+            leechers: download.metadata["leechers"],
+            quality: download.metadata["quality"]
+          }
+
+          opts =
+            []
+            |> maybe_add_opt(:media_item_id, download.media_item_id)
+            |> maybe_add_opt(:episode_id, download.episode_id)
+            |> maybe_add_opt(:client_name, download.download_client)
+
+          Downloads.delete_download(download)
+          Downloads.initiate_download(search_result, opts)
+        rescue
+          _ -> {:error, :failed}
+        end
       end)
 
     success_count = Enum.count(results, fn {status, _} -> status == :ok end)
@@ -122,7 +226,8 @@ defmodule MydiaWeb.DownloadsLive.Index do
     {:noreply,
      socket
      |> assign(:selected_ids, MapSet.new())
-     |> put_flash(:info, "#{success_count} download(s) queued for retry")
+     |> assign(:selection_mode, false)
+     |> put_flash(:info, "#{success_count} download(s) re-initiated")
      |> load_downloads()}
   end
 
@@ -131,8 +236,15 @@ defmodule MydiaWeb.DownloadsLive.Index do
 
     results =
       Enum.map(selected_ids, fn id ->
-        download = Downloads.get_download!(id)
-        Downloads.delete_download(download)
+        try do
+          download = Downloads.get_download!(id)
+          # Try to remove from client (ignore errors)
+          _ = Downloads.cancel_download(download, delete_files: true)
+          # Delete from database
+          Downloads.delete_download(download)
+        rescue
+          _ -> {:error, :failed}
+        end
       end)
 
     success_count = Enum.count(results, fn {status, _} -> status == :ok end)
@@ -140,17 +252,26 @@ defmodule MydiaWeb.DownloadsLive.Index do
     {:noreply,
      socket
      |> assign(:selected_ids, MapSet.new())
+     |> assign(:selection_mode, false)
      |> put_flash(:info, "#{success_count} download(s) removed")
      |> load_downloads()}
   end
 
   def handle_event("clear_completed", _params, socket) do
-    # Delete all completed downloads
-    completed_downloads = Downloads.list_downloads(status: "completed")
+    # Get all completed downloads from clients
+    completed_downloads = Downloads.list_downloads_with_status(filter: :completed)
 
     results =
-      Enum.map(completed_downloads, fn download ->
-        Downloads.delete_download(download)
+      Enum.map(completed_downloads, fn download_map ->
+        try do
+          download = Downloads.get_download!(download_map.id)
+          # Try to remove from client (ignore errors as may already be removed)
+          _ = Downloads.cancel_download(download, delete_files: false)
+          # Delete from database
+          Downloads.delete_download(download)
+        rescue
+          _ -> {:error, :failed}
+        end
       end)
 
     success_count = Enum.count(results, fn {status, _} -> status == :ok end)
@@ -182,15 +303,14 @@ defmodule MydiaWeb.DownloadsLive.Index do
   # Private functions
 
   defp load_downloads(socket) do
-    status_filter =
+    filter =
       case socket.assigns.active_tab do
-        :queue -> ["pending", "downloading"]
-        :issues -> "failed"
+        :queue -> :active
+        :issues -> :failed
       end
 
-    # Get all matching downloads for the current tab
-    all_downloads =
-      Downloads.list_downloads(status: status_filter, preload: [:media_item, :episode])
+    # Get all matching downloads for the current tab with real-time status from clients
+    all_downloads = Downloads.list_downloads_with_status(filter: filter)
 
     # Apply pagination
     page = socket.assigns.page
@@ -208,24 +328,24 @@ defmodule MydiaWeb.DownloadsLive.Index do
   end
 
   defp get_current_downloads(socket) do
-    status_filter =
+    filter =
       case socket.assigns.active_tab do
-        :queue -> ["pending", "downloading"]
-        :issues -> "failed"
+        :queue -> :active
+        :issues -> :failed
       end
 
-    Downloads.list_downloads(status: status_filter, preload: [:media_item, :episode])
+    Downloads.list_downloads_with_status(filter: filter)
   end
 
   # View helpers
 
-  defp is_selected?(socket, id) do
-    MapSet.member?(socket.assigns.selected_ids, id)
+  defp is_selected?(assigns, id) do
+    MapSet.member?(assigns.selected_ids, id)
   end
 
   defp get_poster_url(download) do
     cond do
-      download.media_item && download.media_item.metadata ->
+      is_map(download.media_item) && is_map(download.media_item.metadata) ->
         case download.media_item.metadata do
           %{"poster_path" => path} when is_binary(path) ->
             "https://image.tmdb.org/t/p/w200#{path}"
@@ -281,6 +401,16 @@ defmodule MydiaWeb.DownloadsLive.Index do
     end
   end
 
+  defp format_eta(seconds) when is_integer(seconds) do
+    cond do
+      seconds < 0 -> "Now"
+      seconds < 60 -> "#{seconds}s"
+      seconds < 3600 -> "#{div(seconds, 60)}m"
+      seconds < 86400 -> "#{div(seconds, 3600)}h"
+      true -> "#{div(seconds, 86400)}d"
+    end
+  end
+
   defp format_progress(nil), do: 0.0
   defp format_progress(progress), do: Float.round(progress, 1)
 
@@ -294,24 +424,109 @@ defmodule MydiaWeb.DownloadsLive.Index do
   defp status_badge_class(status) do
     case status do
       "completed" -> "badge-success"
+      "seeding" -> "badge-success"
       "failed" -> "badge-error"
+      "missing" -> "badge-error"
       "cancelled" -> "badge-warning"
       "downloading" -> "badge-primary"
-      "pending" -> "badge-info"
+      "checking" -> "badge-info"
+      "paused" -> "badge-warning"
       _ -> "badge-ghost"
     end
   end
 
   defp get_display_title(download) do
     cond do
-      download.media_item ->
+      # Episode download - show parent show title
+      is_map(download.episode) ->
+        if is_map(download.episode.media_item) do
+          download.episode.media_item.title
+        else
+          # Fallback to direct media_item if episode.media_item is not loaded
+          if is_map(download.media_item), do: download.media_item.title, else: "Unknown Show"
+        end
+
+      # Movie or show-level download
+      is_map(download.media_item) && download.media_item.title ->
         download.media_item.title
 
-      download.episode ->
-        "#{download.episode.title} (S#{download.episode.season_number}E#{download.episode.episode_number})"
-
+      # Fallback to torrent title
       true ->
         download.title
+    end
+  end
+
+  defp get_episode_details(download) do
+    cond do
+      # Download has a specific episode association
+      is_map(download.episode) ->
+        episode_id = format_episode_identifier(download.episode)
+        episode_title = download.episode.title
+
+        if episode_title do
+          "#{episode_id} - #{episode_title}"
+        else
+          episode_id
+        end
+
+      # Download is for a TV show but no episode (likely season pack or series)
+      is_map(download.media_item) && download.media_item.type == "tv_show" ->
+        extract_season_info_from_title(download.title)
+
+      true ->
+        nil
+    end
+  end
+
+  defp extract_season_info_from_title(title) do
+    cond do
+      # Match S01, S02, etc. (most common format)
+      Regex.match?(~r/\.S(\d{1,2})(?:\.|E|$)/i, title) ->
+        [_, season] = Regex.run(~r/\.S(\d{1,2})(?:\.|E|$)/i, title)
+        "Season #{String.to_integer(season)}"
+
+      # Match "Season 1", "Season 01", etc.
+      Regex.match?(~r/Season[\s\.]+(\d{1,2})/i, title) ->
+        [_, season] = Regex.run(~r/Season[\s\.]+(\d{1,2})/i, title)
+        "Season #{String.to_integer(season)}"
+
+      # If title has "Complete" or "Series" - likely full series pack
+      Regex.match?(~r/(Complete|Series|Collection)/i, title) ->
+        "Complete Series"
+
+      # Fallback
+      true ->
+        nil
+    end
+  end
+
+  defp format_episode_identifier(episode) do
+    season = String.pad_leading("#{episode.season_number}", 2, "0")
+    episode_num = String.pad_leading("#{episode.episode_number}", 2, "0")
+    "S#{season}E#{episode_num}"
+  end
+
+  defp get_media_type(download) do
+    cond do
+      # If there's an episode, it's a TV show
+      is_map(download.episode) ->
+        "tv_show"
+
+      # Otherwise check media_item type
+      is_map(download.media_item) && download.media_item.type ->
+        download.media_item.type
+
+      # Unknown/fallback
+      true ->
+        nil
+    end
+  end
+
+  defp media_type_badge(download) do
+    case get_media_type(download) do
+      "movie" -> {"🎬", "Movie", "badge-accent"}
+      "tv_show" -> {"📺", "TV Show", "badge-info"}
+      _ -> nil
     end
   end
 end

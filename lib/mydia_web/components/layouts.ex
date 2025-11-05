@@ -39,6 +39,7 @@ defmodule MydiaWeb.Layouts do
       assigns
       |> Map.put_new(:movie_count, Mydia.Media.count_movies())
       |> Map.put_new(:tv_show_count, Mydia.Media.count_tv_shows())
+      |> Map.put_new(:downloads_count, Mydia.Downloads.count_active_downloads())
 
     ~H"""
     <div class="drawer lg:drawer-open">
@@ -110,7 +111,7 @@ defmodule MydiaWeb.Layouts do
               <li>
                 <a href="/downloads">
                   <.icon name="hero-arrow-down-tray" class="w-5 h-5" /> Downloads
-                  <span class="badge badge-primary badge-sm">0</span>
+                  <span class="badge badge-primary badge-sm">{@downloads_count}</span>
                 </a>
               </li>
               <li>

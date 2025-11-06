@@ -226,11 +226,12 @@ defmodule Mydia.Jobs.TVShowSearch do
     today = Date.utc_today()
 
     Episode
-    |> where([e], e.monitored == true)
+    |> join(:inner, [e], m in assoc(e, :media_item))
+    |> where([e, m], e.monitored == true and m.monitored == true)
     |> where([e], e.air_date <= ^today)
     |> join(:left, [e], mf in assoc(e, :media_files))
     |> group_by([e], e.id)
-    |> having([e, mf], count(mf.id) == 0)
+    |> having([_e, _m, mf], count(mf.id) == 0)
     |> preload(:media_item)
     |> Repo.all()
   end
@@ -239,12 +240,13 @@ defmodule Mydia.Jobs.TVShowSearch do
     today = Date.utc_today()
 
     Episode
-    |> where([e], e.media_item_id == ^media_item_id)
-    |> where([e], e.monitored == true)
+    |> join(:inner, [e], m in assoc(e, :media_item))
+    |> where([e, m], e.media_item_id == ^media_item_id)
+    |> where([e, m], e.monitored == true and m.monitored == true)
     |> where([e], e.air_date <= ^today)
     |> join(:left, [e], mf in assoc(e, :media_files))
     |> group_by([e], e.id)
-    |> having([e, mf], count(mf.id) == 0)
+    |> having([_e, _m, mf], count(mf.id) == 0)
     |> preload(:media_item)
     |> Repo.all()
   end
@@ -253,13 +255,14 @@ defmodule Mydia.Jobs.TVShowSearch do
     today = Date.utc_today()
 
     Episode
-    |> where([e], e.media_item_id == ^media_item_id)
+    |> join(:inner, [e], m in assoc(e, :media_item))
+    |> where([e, m], e.media_item_id == ^media_item_id)
     |> where([e], e.season_number == ^season_number)
-    |> where([e], e.monitored == true)
+    |> where([e, m], e.monitored == true and m.monitored == true)
     |> where([e], e.air_date <= ^today)
     |> join(:left, [e], mf in assoc(e, :media_files))
     |> group_by([e], e.id)
-    |> having([e, mf], count(mf.id) == 0)
+    |> having([_e, _m, mf], count(mf.id) == 0)
     |> preload(:media_item)
     |> Repo.all()
   end

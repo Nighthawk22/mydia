@@ -99,10 +99,10 @@ defmodule Mydia.Metadata.Provider.HTTP do
 
     # Add default headers
     req =
-      Req.Request.merge_options(req,
+      Req.merge(req,
         headers: [
-          {"accept", "application/json"},
-          {"user-agent", "Mydia/1.0"}
+          accept: "application/json",
+          user_agent: "Mydia/1.0"
         ]
       )
 
@@ -178,7 +178,7 @@ defmodule Mydia.Metadata.Provider.HTTP do
   @spec request(request(), keyword()) :: {:ok, response()} | {:error, Error.t()}
   def request(req, opts) do
     req
-    |> Req.Request.merge_options(opts)
+    |> Req.merge(opts)
     |> Req.request()
     |> handle_response()
   end

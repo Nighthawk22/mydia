@@ -492,8 +492,8 @@ defmodule Mydia.Media do
             |> Repo.delete_all()
           end
 
-          # Get seasons from metadata (using string key since metadata is loaded from JSON)
-          seasons = metadata["seasons"] || []
+          # Get seasons from metadata (using atom key since metadata comes from provider)
+          seasons = metadata[:seasons] || []
 
           Logger.info(
             "Fetching episodes for TV show: #{media_item.title}, found #{length(seasons)} seasons in metadata"
@@ -513,22 +513,22 @@ defmodule Mydia.Media do
           episode_count =
             Enum.reduce(seasons_to_fetch, 0, fn season, count ->
               # Skip season 0 (specials) unless explicitly monitoring all
-              if season["season_number"] == 0 and season_monitoring != "all" do
+              if season[:season_number] == 0 and season_monitoring != "all" do
                 count
               else
-                Logger.info("Creating episodes for season #{season["season_number"]}")
+                Logger.info("Creating episodes for season #{season[:season_number]}")
 
                 case create_episodes_for_season(media_item, season, config, force) do
                   {:ok, created} ->
                     Logger.info(
-                      "Created #{created} episodes for season #{season["season_number"]}"
+                      "Created #{created} episodes for season #{season[:season_number]}"
                     )
 
                     count + created
 
                   {:error, reason} ->
                     Logger.error(
-                      "Failed to create episodes for season #{season["season_number"]}: #{inspect(reason)}"
+                      "Failed to create episodes for season #{season[:season_number]}: #{inspect(reason)}"
                     )
 
                     count
@@ -657,7 +657,7 @@ defmodule Mydia.Media do
         _ -> media_item.tmdb_id
       end
 
-    case Metadata.fetch_season(config, to_string(tmdb_id), season["season_number"]) do
+    case Metadata.fetch_season(config, to_string(tmdb_id), season[:season_number]) do
       {:ok, season_data} ->
         episodes = season_data[:episodes] || []
 

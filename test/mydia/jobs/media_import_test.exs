@@ -41,6 +41,7 @@ defmodule Mydia.Jobs.MediaImportTest do
         download_fixture(%{
           media_item_id: media_item.id,
           status: "completed",
+          completed_at: DateTime.utc_now(),
           download_client: nil,
           download_client_id: nil
         })
@@ -58,6 +59,7 @@ defmodule Mydia.Jobs.MediaImportTest do
         download_fixture(%{
           media_item_id: media_item.id,
           status: "completed",
+          completed_at: DateTime.utc_now(),
           download_client: "TestClient",
           download_client_id: "test123"
         })

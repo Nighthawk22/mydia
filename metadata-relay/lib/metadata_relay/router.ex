@@ -44,6 +44,18 @@ defmodule MetadataRelay.Router do
     handle_tmdb_request(conn, fn -> Handler.search_tv(params) end)
   end
 
+  # TMDB Trending Movies (must come before /tmdb/movies/:id)
+  get "/tmdb/movies/trending" do
+    params = extract_query_params(conn)
+    handle_tmdb_request(conn, fn -> Handler.trending_movies(params) end)
+  end
+
+  # TMDB Trending TV (must come before /tmdb/tv/shows/:id)
+  get "/tmdb/tv/trending" do
+    params = extract_query_params(conn)
+    handle_tmdb_request(conn, fn -> Handler.trending_tv(params) end)
+  end
+
   # TMDB Movie Details
   get "/tmdb/movies/:id" do
     params = extract_query_params(conn)
@@ -72,18 +84,6 @@ defmodule MetadataRelay.Router do
   get "/tmdb/tv/shows/:id/:season" do
     params = extract_query_params(conn)
     handle_tmdb_request(conn, fn -> Handler.get_season(id, season, params) end)
-  end
-
-  # TMDB Trending Movies
-  get "/tmdb/movies/trending" do
-    params = extract_query_params(conn)
-    handle_tmdb_request(conn, fn -> Handler.trending_movies(params) end)
-  end
-
-  # TMDB Trending TV
-  get "/tmdb/tv/trending" do
-    params = extract_query_params(conn)
-    handle_tmdb_request(conn, fn -> Handler.trending_tv(params) end)
   end
 
   # TVDB Search

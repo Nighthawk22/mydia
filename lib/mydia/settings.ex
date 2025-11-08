@@ -401,7 +401,16 @@ defmodule Mydia.Settings do
           get_indexer_config!(int_id, opts)
 
         _ ->
-          raise "Invalid indexer ID: #{id}"
+          # Try as UUID for database lookup
+          case Ecto.UUID.cast(id) do
+            {:ok, uuid} ->
+              IndexerConfig
+              |> maybe_preload(opts[:preload])
+              |> Repo.get!(uuid)
+
+            :error ->
+              raise "Invalid indexer ID: #{id}"
+          end
       end
     end
   end

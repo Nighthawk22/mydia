@@ -11,15 +11,15 @@ defmodule Mydia.SettingsTest do
 
       # Call the function
       assert {:ok, count} = Settings.ensure_default_quality_profiles()
-      assert count == 6
+      assert count == 8
 
       # Verify all profiles were created
       profiles = Settings.list_quality_profiles()
-      assert length(profiles) == 6
+      assert length(profiles) == 8
 
       # Verify specific profiles exist with expected properties
       profile_names = Enum.map(profiles, & &1.name) |> MapSet.new()
-      expected_names = MapSet.new(["Any", "SD", "HD-720p", "HD-1080p", "Full HD", "4K/UHD"])
+      expected_names = MapSet.new(["Any", "SD", "HD-720p", "HD-1080p", "Full HD", "4K/UHD", "Remux-1080p", "Remux-2160p"])
       assert profile_names == expected_names
     end
 
@@ -28,14 +28,14 @@ defmodule Mydia.SettingsTest do
       Repo.delete_all(QualityProfile)
 
       # First call creates profiles
-      assert {:ok, 6} = Settings.ensure_default_quality_profiles()
+      assert {:ok, 8} = Settings.ensure_default_quality_profiles()
 
       # Second call should not create any new profiles
       assert {:ok, 0} = Settings.ensure_default_quality_profiles()
 
-      # Should still have exactly 6 profiles
+      # Should still have exactly 8 profiles
       profiles = Settings.list_quality_profiles()
-      assert length(profiles) == 6
+      assert length(profiles) == 8
     end
 
     test "only creates missing profiles when some already exist" do
@@ -49,12 +49,12 @@ defmodule Mydia.SettingsTest do
           qualities: ["360p", "480p", "720p", "1080p"]
         })
 
-      # Call the function - should create 5 more profiles
-      assert {:ok, 5} = Settings.ensure_default_quality_profiles()
+      # Call the function - should create 7 more profiles
+      assert {:ok, 7} = Settings.ensure_default_quality_profiles()
 
-      # Verify we now have 6 profiles
+      # Verify we now have 8 profiles
       profiles = Settings.list_quality_profiles()
-      assert length(profiles) == 6
+      assert length(profiles) == 8
     end
 
     test "profiles have correct structure and required fields" do
@@ -140,7 +140,7 @@ defmodule Mydia.SettingsTest do
       profiles = Settings.DefaultQualityProfiles.defaults()
 
       assert is_list(profiles)
-      assert length(profiles) == 6
+      assert length(profiles) == 8
 
       # Each profile should have required keys
       Enum.each(profiles, fn profile ->

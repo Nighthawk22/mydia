@@ -270,8 +270,8 @@ defmodule Mydia.Metadata.Provider.Error do
   end
 
   def from_req_error(%Req.Response{status: status} = response) when status >= 400 do
-    message = get_error_message(response.body, "HTTP #{status}")
-    api_error(message, %{status: status, body: response.body})
+    message = get_error_message(response.body, "HTTP error")
+    api_error("#{message} (#{status})", %{status: status, body: response.body})
   end
 
   def from_req_error(error) do

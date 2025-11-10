@@ -17,10 +17,13 @@ defmodule MydiaWeb.AdminStatusLiveTest do
       user = user_fixture(%{role: "user"})
       conn = log_in_user(conn, user)
 
-      # Regular user should not be able to access admin status
-      assert_error_sent(403, fn ->
-        get(conn, ~p"/admin/status")
-      end)
+      # Regular user should be redirected when trying to access admin status
+      {:error, {:redirect, %{to: path, flash: flash}}} = live(conn, ~p"/admin/status")
+
+      # Should redirect to home page
+      assert path == "/"
+      # Should have an error flash message
+      assert flash["error"] =~ "permission"
     end
 
     test "allows admin access", %{conn: conn} do

@@ -390,16 +390,16 @@ defmodule Mydia.Library.FileParser do
     has_year = year != nil
     has_quality = quality.resolution != nil || quality.source != nil || quality.codec != nil
     has_good_title = title != nil && String.length(title) > 3
-    has_multiword_title = title != nil && String.contains?(title, " ")
 
     # Start with base confidence based on what information we have
+    # A movie should have at least a year OR quality markers to be considered valid
     base_confidence =
       cond do
         # No meaningful attributes at all
         !has_good_title && !has_year && !has_quality -> 0.0
-        # Just a short/single-word title, nothing else
-        !has_year && !has_quality && !has_multiword_title -> 0.2
-        # Has some meaningful attributes
+        # Has title but missing both year AND quality - likely not a movie
+        !has_year && !has_quality -> 0.2
+        # Has at least year or quality markers
         true -> 0.5
       end
 

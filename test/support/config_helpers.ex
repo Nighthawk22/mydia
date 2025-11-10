@@ -10,27 +10,22 @@ defmodule Mydia.ConfigHelpers do
   Returns the client configuration map.
   """
   def create_test_download_client(attrs \\ %{}) do
-    id = Ecto.UUID.generate()
-
     config = %{
-      "id" => id,
-      "type" => "transmission",
-      "name" => "Test Client #{id}",
-      "host" => "localhost",
-      "port" => 9091,
-      "username" => "test",
-      "password" => "test",
-      "enabled" => true
+      type: "transmission",
+      name: "Test Client #{System.unique_integer([:positive])}",
+      host: "localhost",
+      port: 9091,
+      username: "test",
+      password: "test",
+      enabled: true
     }
 
-    final_config = Map.merge(config, attrs)
+    final_attrs = Map.merge(config, attrs)
 
-    # Store in Settings using the config system
-    # Note: This assumes Settings has methods to handle this
-    # If not, this helper should be updated when config management is implemented
-    {:ok, _} = Settings.upsert_setting("download_clients", [final_config])
+    # Create download client config in the database
+    {:ok, client_config} = Settings.create_download_client_config(final_attrs)
 
-    final_config
+    client_config
   end
 
   @doc """
@@ -71,9 +66,13 @@ defmodule Mydia.ConfigHelpers do
   """
   def clear_test_config do
     # Clear download clients
-    Settings.upsert_setting("download_clients", [])
-    # Clear indexers if that setting exists
-    Settings.upsert_setting("indexers", [])
+    Settings.list_download_client_configs()
+    |> Enum.each(&Settings.delete_download_client_config/1)
+
+    # Clear indexers
+    Settings.list_indexer_configs()
+    |> Enum.each(&Settings.delete_indexer_config/1)
+
     :ok
   rescue
     _ -> :ok

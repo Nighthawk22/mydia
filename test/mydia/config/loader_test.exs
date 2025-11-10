@@ -14,33 +14,30 @@ defmodule Mydia.Config.LoaderTest do
     end)
 
     # Clean up environment variables before each test
-    env_vars = [
-      "PORT",
-      "HOST",
-      "URL_SCHEME",
-      "URL_HOST",
-      "DATABASE_PATH",
-      "POOL_SIZE",
-      "LOCAL_AUTH_ENABLED",
-      "OIDC_ENABLED",
-      "OIDC_ISSUER",
-      "OIDC_CLIENT_ID",
-      "OIDC_CLIENT_SECRET",
-      "MOVIES_PATH",
-      "TV_PATH",
-      "LOG_LEVEL",
-      "OBAN_POLL_INTERVAL",
-      "DOWNLOAD_CLIENT_1_NAME",
-      "DOWNLOAD_CLIENT_1_TYPE",
-      "DOWNLOAD_CLIENT_1_HOST",
-      "DOWNLOAD_CLIENT_1_PORT",
-      "DOWNLOAD_CLIENT_1_USERNAME",
-      "DOWNLOAD_CLIENT_1_PASSWORD",
-      "DOWNLOAD_CLIENT_2_NAME",
-      "DOWNLOAD_CLIENT_2_TYPE",
-      "DOWNLOAD_CLIENT_2_HOST",
-      "DOWNLOAD_CLIENT_2_PORT"
-    ]
+    # First, find and clean all DOWNLOAD_CLIENT_* env vars
+    download_client_vars =
+      System.get_env()
+      |> Enum.filter(fn {key, _} -> String.starts_with?(key, "DOWNLOAD_CLIENT_") end)
+      |> Enum.map(fn {key, _} -> key end)
+
+    env_vars =
+      [
+        "PORT",
+        "HOST",
+        "URL_SCHEME",
+        "URL_HOST",
+        "DATABASE_PATH",
+        "POOL_SIZE",
+        "LOCAL_AUTH_ENABLED",
+        "OIDC_ENABLED",
+        "OIDC_ISSUER",
+        "OIDC_CLIENT_ID",
+        "OIDC_CLIENT_SECRET",
+        "MOVIES_PATH",
+        "TV_PATH",
+        "LOG_LEVEL",
+        "OBAN_POLL_INTERVAL"
+      ] ++ download_client_vars
 
     # Store original values
     original_env =

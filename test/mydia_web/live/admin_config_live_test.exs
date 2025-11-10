@@ -41,6 +41,7 @@ defmodule MydiaWeb.AdminConfigLiveTest do
 
       conn =
         conn
+        |> Plug.Test.init_test_session(%{})
         |> put_session(:guardian_default_token, regular_token)
         |> put_req_header("authorization", "Bearer #{regular_token}")
 
@@ -64,6 +65,9 @@ defmodule MydiaWeb.AdminConfigLiveTest do
 
   describe "Index - Tabs" do
     setup %{conn: conn, token: token} do
+      # Start the Indexers.Health GenServer to initialize ETS tables
+      start_supervised!(Mydia.Indexers.Health)
+
       conn =
         conn
         |> init_test_session(%{})
@@ -117,6 +121,9 @@ defmodule MydiaWeb.AdminConfigLiveTest do
 
   describe "Quality Profiles" do
     setup %{conn: conn, token: token} do
+      # Start the Indexers.Health GenServer to initialize ETS tables
+      start_supervised!(Mydia.Indexers.Health)
+
       conn =
         conn
         |> init_test_session(%{})
@@ -197,6 +204,9 @@ defmodule MydiaWeb.AdminConfigLiveTest do
 
   describe "Download Clients" do
     setup %{conn: conn, token: token} do
+      # Start the Indexers.Health GenServer to initialize ETS tables
+      start_supervised!(Mydia.Indexers.Health)
+
       conn =
         conn
         |> init_test_session(%{})
@@ -238,6 +248,9 @@ defmodule MydiaWeb.AdminConfigLiveTest do
 
   describe "Indexers" do
     setup %{conn: conn, token: token} do
+      # Start the Indexers.Health GenServer to initialize ETS tables
+      start_supervised!(Mydia.Indexers.Health)
+
       conn =
         conn
         |> init_test_session(%{})
@@ -277,6 +290,9 @@ defmodule MydiaWeb.AdminConfigLiveTest do
 
   describe "Library Paths" do
     setup %{conn: conn, token: token} do
+      # Start the Indexers.Health GenServer to initialize ETS tables
+      start_supervised!(Mydia.Indexers.Health)
+
       conn =
         conn
         |> init_test_session(%{})

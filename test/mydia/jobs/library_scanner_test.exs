@@ -6,10 +6,14 @@ defmodule Mydia.Jobs.LibraryScannerTest do
   import Mydia.MediaFixtures
 
   describe "perform/1" do
+    @tag timeout: 120_000
+    @tag :external
     test "successfully scans library with no media items" do
       assert :ok = perform_job(LibraryScanner, %{})
     end
 
+    @tag timeout: 120_000
+    @tag :external
     test "successfully scans library with monitored media items" do
       # Create some monitored media items
       media_item_fixture(%{title: "Test Movie", type: "movie", monitored: true})

@@ -528,7 +528,13 @@ defmodule Mydia.Downloads.Client.Nzbget do
   defp fetch_nzb_from_url(url) do
     Logger.debug("Fetching NZB from URL: #{url}")
 
-    case Req.get(url) do
+    # Configure Req with reasonable timeouts and no retries
+    # to avoid test timeouts when connecting to unreachable hosts
+    case Req.get(url,
+           connect_options: [timeout: 5000],
+           receive_timeout: 10_000,
+           max_retries: 0
+         ) do
       {:ok, %{status: 200, body: body}} when is_binary(body) ->
         {:ok, body}
 

@@ -39,8 +39,9 @@ defmodule Mydia.IndexersTest do
     end
 
     test "returns empty list when no indexers are enabled" do
-      # Disable all indexers
+      # Disable all database-persisted indexers (runtime configs can't be updated)
       Settings.list_indexer_configs()
+      |> Enum.filter(fn config -> not is_nil(config.inserted_at) end)
       |> Enum.each(fn config ->
         Settings.update_indexer_config(config, %{enabled: false})
       end)

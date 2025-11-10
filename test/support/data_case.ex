@@ -12,12 +12,21 @@ defmodule Mydia.DataCase do
   PostgreSQL, you can even run database tests asynchronously
   by setting `use Mydia.DataCase, async: true`, although
   this option is not recommended for other databases.
+
+  Note: For SQLite databases, async mode is forcibly disabled to prevent
+  "Database busy" errors, regardless of the async option setting.
   """
 
   use ExUnit.CaseTemplate
 
-  using do
+  using opts do
+    # Force async: false for SQLite to prevent Database busy errors
+    # Override any async: true setting from the test module
+    async_mode = Keyword.get(opts, :async, false) && false
+
     quote do
+      use ExUnit.Case, async: unquote(async_mode)
+
       alias Mydia.Repo
 
       import Ecto

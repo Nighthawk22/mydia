@@ -66,7 +66,11 @@ fi
 
 # Ensure critical directories exist and have correct ownership
 mkdir -p /config /data /media
-chown -R "$PUID:$PGID" /config /data /media /app
+
+# Only chown application directories, never /media
+# /media may be a network mount (NFS/SMB) where chown is slow or fails
+# Users should configure mount permissions via UID/GID mapping
+chown -R "$PUID:$PGID" /config /data /app
 
 # Set timezone if provided
 if [ -n "$TZ" ]; then

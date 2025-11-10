@@ -130,8 +130,10 @@ defmodule Mydia.Downloads.ClientHealthTest do
       client1_health = Enum.find(results, fn {id, _} -> id == client1.id end)
       client2_health = Enum.find(results, fn {id, _} -> id == client2.id end)
 
-      assert {^client1, health1} = client1_health
-      assert {^client2, health2} = client2_health
+      client1_id = client1.id
+      client2_id = client2.id
+      assert {^client1_id, health1} = client1_health
+      assert {^client2_id, health2} = client2_health
 
       assert health1.status in [:healthy, :unhealthy, :unknown]
       assert health2.status in [:healthy, :unhealthy, :unknown]

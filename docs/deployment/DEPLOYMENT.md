@@ -125,6 +125,26 @@ The production setup uses the following volumes:
 - `mydia_data` - Application data and SQLite database
 - Media directories - Mount your existing media library directories
 
+### Network Mounts (NFS/SMB)
+
+Mydia supports NFS and SMB network mounts. Ensure your mount has proper permissions for the container's UID/GID (default 1000, configurable via `PUID`/`PGID`).
+
+**NFS Export Example** (`/etc/exports` on NFS server):
+```bash
+/path/to/media  192.168.1.0/24(rw,all_squash,anonuid=1000,anongid=1000)
+```
+
+**Docker Compose with Host Mount**:
+```yaml
+services:
+  mydia:
+    volumes:
+      - /mnt/nfs/movies:/media/movies
+      - /mnt/smb/tv:/media/tv
+```
+
+**Troubleshooting**: If you get permission errors, verify the mount's UID/GID matches your `PUID`/`PGID` settings.
+
 ## Ports
 
 - `4000` - HTTP port for the web interface

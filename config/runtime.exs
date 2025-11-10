@@ -71,14 +71,34 @@ if config_env() == :prod do
       origins -> String.split(origins, ",", trim: true)
     end
 
+  # Configure IP binding - defaults to IPv4 for Docker compatibility
+  # Set PHX_IP="::" for IPv6, or PHX_IP="0.0.0.0" for explicit IPv4
+  ip_tuple =
+    case System.get_env("PHX_IP") do
+      "::" ->
+        {0, 0, 0, 0, 0, 0, 0, 0}
+
+      "0.0.0.0" ->
+        {0, 0, 0, 0}
+
+      nil ->
+        {0, 0, 0, 0}
+
+      custom_ip ->
+        custom_ip
+        |> String.split(".")
+        |> Enum.map(&String.to_integer/1)
+        |> List.to_tuple()
+    end
+
   config :mydia, MydiaWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
+      # Bind on all interfaces using IPv4 by default (Docker compatible)
+      # Set PHX_IP="::" environment variable to use IPv6
       # See the documentation on https://hexdocs.pm/bandit/Bandit.html#t:options/0
       # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0},
+      ip: ip_tuple,
       port: port
     ],
     secret_key_base: secret_key_base,

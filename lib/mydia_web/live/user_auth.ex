@@ -9,7 +9,9 @@ defmodule MydiaWeb.Live.UserAuth do
   import Phoenix.LiveView
 
   alias Mydia.Accounts
+  alias Mydia.Accounts.Authorization
   alias Mydia.Auth.Guardian
+  alias Mydia.MediaRequests
 
   @doc """
   LiveView mount hook for authentication and authorization.
@@ -65,11 +67,19 @@ defmodule MydiaWeb.Live.UserAuth do
   def on_mount(:load_navigation_data, _params, _session, socket) do
     # Load navigation counts once per LiveView mount
     # These are used by the layout component for sidebar badges
+    pending_requests_count =
+      if Authorization.can_manage_requests?(socket.assigns[:current_user]) do
+        MediaRequests.count_pending_requests()
+      else
+        0
+      end
+
     socket =
       socket
       |> assign(:movie_count, Mydia.Media.count_movies())
       |> assign(:tv_show_count, Mydia.Media.count_tv_shows())
       |> assign(:downloads_count, Mydia.Downloads.count_active_downloads())
+      |> assign(:pending_requests_count, pending_requests_count)
 
     {:cont, socket}
   end

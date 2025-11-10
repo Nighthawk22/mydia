@@ -25,6 +25,7 @@ defmodule MydiaWeb.Layouts do
         movie_count={@movie_count}
         tv_show_count={@tv_show_count}
         downloads_count={@downloads_count}
+        pending_requests_count={@pending_requests_count}
       >
         <h1>Content</h1>
       </Layouts.app>
@@ -40,6 +41,7 @@ defmodule MydiaWeb.Layouts do
   attr :movie_count, :integer, default: 0, doc: "number of movies in library"
   attr :tv_show_count, :integer, default: 0, doc: "number of TV shows in library"
   attr :downloads_count, :integer, default: 0, doc: "number of active downloads"
+  attr :pending_requests_count, :integer, default: 0, doc: "number of pending requests"
 
   slot :inner_block, required: true
 
@@ -158,6 +160,14 @@ defmodule MydiaWeb.Layouts do
                 <li>
                   <a href="/admin/jobs">
                     <.icon name="hero-queue-list" class="w-5 h-5" /> Background Jobs
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/requests">
+                    <.icon name="hero-inbox-stack" class="w-5 h-5" /> Requests
+                    <%= if @pending_requests_count > 0 do %>
+                      <span class="badge badge-primary badge-sm">{@pending_requests_count}</span>
+                    <% end %>
                   </a>
                 </li>
               <% end %>

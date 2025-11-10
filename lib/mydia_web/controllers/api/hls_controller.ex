@@ -314,15 +314,10 @@ defmodule MydiaWeb.Api.HlsController do
   end
 
   defp find_session_by_id(session_id, _user_id) do
-    # Find session by session_id across all active sessions
-    case Enum.find(HlsSessionSupervisor.list_sessions(), fn {_key, pid, _meta} ->
-           case HlsSession.get_info(pid) do
-             {:ok, info} -> info.session_id == session_id
-             _ -> false
-           end
-         end) do
-      {_key, pid, _meta} -> {:ok, pid}
-      nil -> {:error, :session_not_found}
+    # O(1) lookup using Registry
+    case Registry.lookup(Mydia.Streaming.HlsSessionRegistry, {:session, session_id}) do
+      [{pid, _meta}] -> {:ok, pid}
+      [] -> {:error, :session_not_found}
     end
   end
 

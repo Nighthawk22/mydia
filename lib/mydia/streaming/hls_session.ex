@@ -157,6 +157,17 @@ defmodule Mydia.Streaming.HlsSession do
       session_id = generate_session_id()
       temp_dir = Path.join(@temp_base_dir, session_id)
 
+      # Register session by session_id for O(1) lookup
+      Registry.register(
+        Mydia.Streaming.HlsSessionRegistry,
+        {:session, session_id},
+        %{
+          media_file_id: media_file_id,
+          user_id: user_id,
+          temp_dir: temp_dir
+        }
+      )
+
       case File.mkdir_p(temp_dir) do
         :ok ->
           Logger.info(

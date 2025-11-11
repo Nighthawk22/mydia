@@ -18,7 +18,7 @@ defmodule MydiaWeb.ImportMediaLive.Index do
      |> assign(:discovered_files, [])
      |> assign(:matched_files, [])
      |> assign(:selected_files, MapSet.new())
-     |> assign(:scan_stats, %{total: 0, matched: 0, unmatched: 0, skipped: 0})
+     |> assign(:scan_stats, %{total: 0, matched: 0, unmatched: 0, skipped: 0, orphaned: 0})
      |> assign(:library_paths, Settings.list_library_paths())
      |> assign(:metadata_config, Metadata.default_relay_config())
      |> assign(:import_progress, %{current: 0, total: 0})
@@ -138,20 +138,41 @@ defmodule MydiaWeb.ImportMediaLive.Index do
   def handle_info({:perform_scan, path}, socket) do
     case Scanner.scan(path) do
       {:ok, scan_result} ->
-        # Get existing files from database to skip them
+        # Get existing files from database
+        # Only skip files that have valid parent associations (not orphaned)
         existing_files = Library.list_media_files()
-        existing_paths = MapSet.new(existing_files, & &1.path)
 
-        # Filter out files that already exist in the library
+        existing_valid_paths =
+          existing_files
+          |> Enum.reject(&Library.orphaned_media_file?/1)
+          |> MapSet.new(& &1.path)
+
+        # Build map of orphaned files for re-matching
+        orphaned_files_map =
+          existing_files
+          |> Enum.filter(&Library.orphaned_media_file?/1)
+          |> Map.new(&{&1.path, &1})
+
+        # Filter out files that already have valid associations
+        # Include orphaned files for re-matching
         new_files =
           Enum.reject(scan_result.files, fn file ->
-            MapSet.member?(existing_paths, file.path)
+            MapSet.member?(existing_valid_paths, file.path)
+          end)
+
+        # Track which files are orphaned (for re-matching)
+        files_to_match =
+          Enum.map(new_files, fn file ->
+            orphaned_file = Map.get(orphaned_files_map, file.path)
+
+            Map.put(file, :orphaned_media_file_id, orphaned_file && orphaned_file.id)
           end)
 
         skipped_count = length(scan_result.files) - length(new_files)
+        orphaned_count = map_size(orphaned_files_map)
 
         # Start matching files
-        send(self(), {:match_files, new_files})
+        send(self(), {:match_files, files_to_match})
 
         {:noreply,
          socket
@@ -160,7 +181,13 @@ defmodule MydiaWeb.ImportMediaLive.Index do
          |> assign(:discovered_files, scan_result.files)
          |> assign(
            :scan_stats,
-           %{total: length(new_files), matched: 0, unmatched: 0, skipped: skipped_count}
+           %{
+             total: length(files_to_match),
+             matched: 0,
+             unmatched: 0,
+             skipped: skipped_count,
+             orphaned: orphaned_count
+           }
          )}
 
       {:error, reason} ->
@@ -251,12 +278,31 @@ defmodule MydiaWeb.ImportMediaLive.Index do
   defp import_file(%{match_result: nil}, _config), do: :error
 
   defp import_file(%{file: file, match_result: match_result}, config) do
-    # Create media file record
-    case Library.create_scanned_media_file(%{
-           path: file.path,
-           size: file.size,
-           verified_at: DateTime.utc_now()
-         }) do
+    # Check if this file is orphaned and needs re-matching
+    media_file_result =
+      if file[:orphaned_media_file_id] do
+        # Update existing orphaned media file
+        case Library.get_media_file!(file.orphaned_media_file_id) do
+          media_file ->
+            # Update with fresh metadata
+            Library.update_media_file(media_file, %{
+              size: file.size,
+              verified_at: DateTime.utc_now()
+            })
+
+          _ ->
+            {:error, :not_found}
+        end
+      else
+        # Create new media file record
+        Library.create_scanned_media_file(%{
+          path: file.path,
+          size: file.size,
+          verified_at: DateTime.utc_now()
+        })
+      end
+
+    case media_file_result do
       {:ok, media_file} ->
         # Enrich with metadata
         case Library.MetadataEnricher.enrich(match_result,

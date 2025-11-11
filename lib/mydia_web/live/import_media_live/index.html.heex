@@ -147,6 +147,17 @@
               </span>
             </div>
           <% end %>
+          <%= if @scan_stats[:orphaned] && @scan_stats.orphaned > 0 do %>
+            <div class="alert alert-warning mt-4 max-w-md">
+              <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
+              <span class="text-sm">
+                Found {@scan_stats.orphaned} orphaned {if(@scan_stats.orphaned == 1,
+                  do: "file",
+                  else: "files"
+                )} that will be re-matched
+              </span>
+            </div>
+          <% end %>
         </div>
       </div>
     <% end %>
@@ -178,6 +189,13 @@
               <div class="stat-desc">Skipped</div>
             </div>
           <% end %>
+          <%= if @scan_stats[:orphaned] && @scan_stats.orphaned > 0 do %>
+            <div class="stat">
+              <div class="stat-title">Orphaned</div>
+              <div class="stat-value text-warning">{@scan_stats.orphaned}</div>
+              <div class="stat-desc">Re-matching</div>
+            </div>
+          <% end %>
           <div class="stat">
             <div class="stat-title">Selected</div>
             <div class="stat-value">{MapSet.size(@selected_files)}</div>
@@ -185,7 +203,7 @@
           </div>
         </div>
 
-        <%!-- Skipped files info --%>
+        <%!-- Info alerts --%>
         <%= if @scan_stats.skipped > 0 do %>
           <div class="alert alert-info mb-4">
             <.icon name="hero-information-circle" class="w-5 h-5" />
@@ -195,6 +213,21 @@
                 else: "files were"
               )} skipped because {if(@scan_stats.skipped == 1, do: "it is", else: "they are")} already in your library
             </span>
+          </div>
+        <% end %>
+
+        <%= if @scan_stats[:orphaned] && @scan_stats.orphaned > 0 do %>
+          <div class="alert alert-warning mb-4">
+            <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
+            <div class="flex-1">
+              <span class="text-sm font-semibold">Orphaned Files Detected</span>
+              <p class="text-xs mt-1">
+                {@scan_stats.orphaned} {if(@scan_stats.orphaned == 1,
+                  do: "file was",
+                  else: "files were"
+                )} previously scanned but not matched to any media items. These files will be re-matched during import.
+              </p>
+            </div>
           </div>
         <% end %>
 
@@ -254,6 +287,9 @@
 
                       <%= if match do %>
                         <div class="flex flex-col items-end gap-1">
+                          <%= if matched_file.file[:orphaned_media_file_id] do %>
+                            <div class="badge badge-sm badge-warning">Re-matching</div>
+                          <% end %>
                           <div class={"badge badge-sm " <> confidence_badge_class(match.match_confidence)}>
                             {confidence_label(match.match_confidence)} ({Float.round(
                               match.match_confidence * 100,
@@ -267,7 +303,12 @@
                           <% end %>
                         </div>
                       <% else %>
-                        <div class="badge badge-sm badge-error">No Match</div>
+                        <div class="flex flex-col items-end gap-1">
+                          <%= if matched_file.file[:orphaned_media_file_id] do %>
+                            <div class="badge badge-sm badge-warning">Re-matching</div>
+                          <% end %>
+                          <div class="badge badge-sm badge-error">No Match</div>
+                        </div>
                       <% end %>
                     </div>
 

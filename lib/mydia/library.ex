@@ -93,6 +93,61 @@ defmodule Mydia.Library do
   end
 
   @doc """
+  Deletes the physical file from disk for a media file record.
+
+  Returns `:ok` if the file was successfully deleted or doesn't exist,
+  `{:error, reason}` if deletion failed.
+
+  This function should be called before deleting the database record
+  to ensure the file path is available.
+  """
+  def delete_media_file_from_disk(%MediaFile{} = media_file) do
+    if File.exists?(media_file.path) do
+      case File.rm(media_file.path) do
+        :ok ->
+          Logger.info("Deleted media file from disk", path: media_file.path)
+          :ok
+
+        {:error, reason} ->
+          Logger.error("Failed to delete media file from disk",
+            path: media_file.path,
+            reason: inspect(reason)
+          )
+
+          {:error, reason}
+      end
+    else
+      # File doesn't exist, consider it a success
+      Logger.debug("Media file already doesn't exist on disk", path: media_file.path)
+      :ok
+    end
+  end
+
+  @doc """
+  Deletes physical files from disk for a list of media files.
+
+  Returns a tuple `{:ok, success_count, error_count}` with counts of
+  successfully deleted and failed deletions.
+  """
+  def delete_media_files_from_disk(media_files) when is_list(media_files) do
+    results =
+      Enum.map(media_files, fn file ->
+        delete_media_file_from_disk(file)
+      end)
+
+    success_count = Enum.count(results, &(&1 == :ok))
+    error_count = Enum.count(results, &match?({:error, _}, &1))
+
+    Logger.info("Bulk file deletion from disk completed",
+      success: success_count,
+      errors: error_count,
+      total: length(media_files)
+    )
+
+    {:ok, success_count, error_count}
+  end
+
+  @doc """
   Returns an `%Ecto.Changeset{}` for tracking media file changes.
   """
   def change_media_file(%MediaFile{} = media_file, attrs \\ %{}) do
@@ -111,6 +166,29 @@ defmodule Mydia.Library do
   """
   def get_media_files_for_episode(episode_id, opts \\ []) do
     list_media_files([episode_id: episode_id] ++ opts)
+  end
+
+  @doc """
+  Returns orphaned media files (files without media_item_id or episode_id).
+
+  These files were scanned but failed to match to any media items.
+  They can be safely re-matched or deleted.
+
+  ## Options
+    - `:preload` - List of associations to preload
+  """
+  def list_orphaned_media_files(opts \\ []) do
+    MediaFile
+    |> where([f], is_nil(f.media_item_id) and is_nil(f.episode_id))
+    |> maybe_preload(opts[:preload])
+    |> Repo.all()
+  end
+
+  @doc """
+  Checks if a media file is orphaned (has no parent association).
+  """
+  def orphaned_media_file?(%MediaFile{} = media_file) do
+    is_nil(media_file.media_item_id) and is_nil(media_file.episode_id)
   end
 
   ## Private Functions

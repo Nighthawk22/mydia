@@ -10,6 +10,7 @@ defmodule MydiaWeb.MediaLive.Show do
   alias Mydia.Events
   alias MydiaWeb.Live.Authorization
   alias MydiaWeb.MediaLive.Show.Modals
+  alias MydiaWeb.MediaLive.Show.Components
 
   # Import helper modules
   import MydiaWeb.MediaLive.Show.Formatters

@@ -1,11 +1,11 @@
 ---
 id: task-167
 title: Migrate FileParser to regex-based sequential extraction approach
-status: Done
+status: In Progress
 assignee:
   - Claude
 created_date: '2025-11-11 16:44'
-updated_date: '2025-11-11 17:02'
+updated_date: '2025-11-11 18:19'
 labels:
   - enhancement
   - architecture

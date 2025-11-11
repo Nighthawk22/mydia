@@ -6,10 +6,72 @@ defmodule Mydia.Jobs.TVShowSearchTest do
   alias Mydia.Library
   alias Mydia.Settings
   alias Mydia.IndexerMock
+  alias Mydia.Downloads.Client
+  alias Mydia.Downloads.Client.Registry
+  alias Mydia.Downloads.Client.Error
 
   import Mydia.MediaFixtures
+  import Mydia.SettingsFixtures
+  import Mydia.AccountsFixtures
+
+  # Mock download client adapter for testing
+  defmodule MockDownloadAdapter do
+    @behaviour Client
+
+    @impl true
+    def test_connection(_config) do
+      {:ok, %{version: "1.0.0", api_version: "1.0"}}
+    end
+
+    @impl true
+    def add_torrent(_config, _torrent, _opts) do
+      {:ok, "mock-download-id-#{:rand.uniform(1000)}"}
+    end
+
+    @impl true
+    def get_status(_config, _client_id) do
+      {:ok, %{}}
+    end
+
+    @impl true
+    def list_torrents(_config, _opts) do
+      {:ok, []}
+    end
+
+    @impl true
+    def remove_torrent(_config, _client_id, _opts) do
+      :ok
+    end
+
+    @impl true
+    def pause_torrent(_config, _client_id) do
+      :ok
+    end
+
+    @impl true
+    def resume_torrent(_config, _client_id) do
+      :ok
+    end
+  end
 
   setup do
+    # Register mock download client adapter
+    Registry.register(:transmission, MockDownloadAdapter)
+
+    # Create test user for client configs
+    user = user_fixture()
+
+    # Create test download client
+    download_client_config_fixture(%{
+      name: "test-transmission",
+      type: "transmission",
+      enabled: true,
+      priority: 1,
+      host: "localhost",
+      port: 9091,
+      updated_by_id: user.id
+    })
+
     # Disable all existing indexer configs from test database
     Settings.list_indexer_configs()
     |> Enum.filter(fn config -> not is_nil(config.inserted_at) end)

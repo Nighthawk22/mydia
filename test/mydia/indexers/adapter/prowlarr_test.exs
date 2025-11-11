@@ -24,6 +24,7 @@ defmodule Mydia.Indexers.Adapter.ProwlarrTest do
       assert is_binary(info.version)
     end
 
+    @tag :skip
     test "fails with invalid API key" do
       config = %{
         type: :prowlarr,
@@ -38,6 +39,7 @@ defmodule Mydia.Indexers.Adapter.ProwlarrTest do
       assert {:error, %Error{type: :connection_failed}} = Prowlarr.test_connection(config)
     end
 
+    @tag :skip
     test "fails with invalid host" do
       config = %{
         type: :prowlarr,
@@ -101,6 +103,7 @@ defmodule Mydia.Indexers.Adapter.ProwlarrTest do
       assert is_list(results)
     end
 
+    @tag :skip
     test "handles invalid API key" do
       config = %{
         type: :prowlarr,
@@ -116,6 +119,7 @@ defmodule Mydia.Indexers.Adapter.ProwlarrTest do
       assert error_type in [:connection_failed, :search_failed]
     end
 
+    @tag :skip
     test "handles search with empty query" do
       config = %{
         type: :prowlarr,

@@ -123,8 +123,8 @@ defmodule Mydia.Library.FileParser.V2 do
   @year_pattern_primary ~r/[\(\[](19\d{2}|20\d{2})[\)\]]/
   @year_pattern_secondary ~r/[\s._-](19\d{2}|20\d{2})(?:[\s._-]|$)/
 
-  # Release group pattern - hyphen prefix with optional site tag in brackets
-  @release_group_pattern ~r/-([A-Z0-9]+)(?:\[[^\]]+\])?$/i
+  # Release group pattern - hyphen, dot, or space prefix with optional site tag in brackets
+  @release_group_pattern ~r/[-.\s]([A-Z0-9]+)(?:\[[^\]]+\])?$/i
 
   # TV show patterns - defined as function to avoid module attribute issues
   defp tv_patterns do

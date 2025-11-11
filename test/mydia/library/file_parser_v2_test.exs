@@ -463,22 +463,22 @@ defmodule Mydia.Library.FileParser.V2Test do
       assert result.release_group == "Rosy"
     end
 
-    test "parses Black Phone 2 with DDP5.1 audio codec" do
+    test "parses Black Phone 2 with DDP5.1 audio codec and dot-separated release group" do
       result =
         FileParser.parse("Black Phone 2. 2025 1080P WEB-DL DDP5.1 Atmos. X265. POOLTED.mkv")
 
       assert result.type == :movie
-      # With sequential extraction, "POOLTED" should be removed from title
-      # since it appears at the end (though without hyphen it won't match release_group pattern)
-      assert result.title == "Black Phone 2 Poolted"
+
+      # With sequential extraction and updated release group pattern, "POOLTED" is correctly extracted
+      assert result.title == "Black Phone 2"
       assert result.year == 2025
       assert result.quality.resolution == "1080p"
       assert result.quality.source == "WEB-DL"
       assert result.quality.audio == "DDP5.1"
       # Codec case is preserved from the filename (uppercase "X265")
       assert result.quality.codec == "X265"
-      # Release group not detected due to missing hyphen prefix
-      assert result.release_group == nil
+      # Release group detected with updated pattern supporting dots/spaces
+      assert result.release_group == "POOLTED"
     end
   end
 
@@ -712,8 +712,9 @@ defmodule Mydia.Library.FileParser.V2Test do
       assert result.quality.source == "WEB-DL"
       assert result.quality.audio == "DDP5.1"
       assert result.quality.codec == "X265"
-      # Title should be cleaner with sequential extraction
-      assert String.contains?(result.title, "Black Phone 2")
+      # Title is cleanly extracted with sequential extraction and release group pattern update
+      assert result.title == "Black Phone 2"
+      assert result.release_group == "POOLTED"
     end
 
     test "handles codec variations without list maintenance" do

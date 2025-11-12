@@ -75,6 +75,7 @@ defmodule Mydia.Library.FileParser.V2 do
       |AAC-LC(?:[\s.]\d+[\s.]?\d*)?        # AAC-LC (must be before AAC)
       |AAC(?:[\s.]\d+[\s.]?\d*)?           # AAC, AAC 2.0
       |AC3
+      |OPUS(?:\d+[\s.]?\d*)?               # OPUS, OPUS2.0
     )
     \b
   /xi
@@ -115,7 +116,7 @@ defmodule Mydia.Library.FileParser.V2 do
   @bit_depth_pattern ~r/\b(8|10|12)[\s-]?bits?\b/i
   @encoder_pattern ~r/[-_. ](NVENC|QSV|AMF|VCE|VideoToolbox)\b/i
   @bracket_contents_pattern ~r/\[(HDR|HDR10|HDR10\+|DolbyVision|DoVi|10bit|8bit|x265|x264|HEVC|AVC|2160p|1080p|720p)[^\]]*\]/i
-  @extra_noise_pattern ~r/\b(PROPER|REPACK|INTERNAL|LIMITED|UNRATED|DIRECTORS?\.CUT|EXTENDED|THEATRICAL|AMZN|HYBRID)\b/i
+  @extra_noise_pattern ~r/\b(PROPER|REPACK|INTERNAL|LIMITED|UNRATED|DIRECTORS?\.CUT|EXTENDED|THEATRICAL|AMZN|NF|HYBRID)\b/i
   @audio_channels_pattern ~r/\b[257]\s+1\b/i
   @vmaf_pattern ~r/\bVMAF\d+(?:\.\d+)?\b/i
 
@@ -312,10 +313,14 @@ defmodule Mydia.Library.FileParser.V2 do
     # Special case: TV patterns use a list of regexes
     case match_tv_patterns(text) do
       {:ok, tv_metadata, match_start, match_length} ->
-        # Remove the matched TV pattern from text
+        # Remove the matched TV pattern from text and everything after it until a quality marker
         before = String.slice(text, 0, match_start)
         after_match = String.slice(text, match_start + match_length, String.length(text))
-        new_text = before <> " " <> after_match
+
+        # Discard text between episode marker and first quality marker to remove episode titles
+        after_match_cleaned = discard_until_quality_marker(after_match)
+
+        new_text = before <> " " <> after_match_cleaned
 
         # Merge TV metadata into main metadata
         {Map.merge(metadata, tv_metadata), new_text}
@@ -428,6 +433,59 @@ defmodule Mydia.Library.FileParser.V2 do
 
       _ ->
         {nil, []}
+    end
+  end
+
+  # Discard text until we hit a quality marker to remove episode titles, but preserve years
+  defp discard_until_quality_marker(text) do
+    # First, check if there's a year in parentheses/brackets in the text
+    year_match =
+      case Regex.run(@year_pattern_primary, text, return: :index) do
+        [{start, length} | _] -> {start, length}
+        nil -> nil
+      end
+
+    # Look for the first occurrence of any quality marker pattern
+    quality_patterns = [
+      @resolution_pattern,
+      @source_pattern,
+      @codec_pattern,
+      @hdr_pattern,
+      @audio_pattern,
+      @bit_depth_pattern,
+      @release_group_pattern
+    ]
+
+    # Find the earliest match position among all quality patterns
+    earliest_match =
+      quality_patterns
+      |> Enum.map(fn pattern ->
+        case Regex.run(pattern, text, return: :index) do
+          [{start, _length} | _] -> start
+          nil -> nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.min(fn -> nil end)
+
+    case {year_match, earliest_match} do
+      {nil, nil} ->
+        # No year, no quality marker - discard everything
+        ""
+
+      {{year_start, year_length}, nil} ->
+        # Year found but no quality marker - preserve only the year
+        String.slice(text, year_start, year_length)
+
+      {nil, position} ->
+        # No year, but quality marker found - keep from quality marker onward
+        String.slice(text, position, String.length(text))
+
+      {{year_start, year_length}, position} ->
+        # Both year and quality marker found - preserve year and everything from quality marker
+        year_text = String.slice(text, year_start, year_length)
+        quality_text = String.slice(text, position, String.length(text))
+        year_text <> " " <> quality_text
     end
   end
 

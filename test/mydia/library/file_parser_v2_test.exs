@@ -1126,4 +1126,159 @@ defmodule Mydia.Library.FileParser.V2Test do
       assert result.release_group == "ELITE"
     end
   end
+
+  describe "TV show episode titles in filename - task-177" do
+    test "parses TV show without episode title correctly" do
+      result = FileParser.parse("The.Witcher.S04E01.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "The Witcher"
+      assert result.season == 4
+      assert result.episodes == [1]
+    end
+
+    test "parses TV show with episode title - should not include episode title in series name" do
+      result = FileParser.parse("The.Witcher.S04E01.What.Doesnt.Kill.You.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "The Witcher"
+      assert result.season == 4
+      assert result.episodes == [1]
+    end
+
+    test "parses TV show with long episode title - should not include episode title in series name" do
+      result =
+        FileParser.parse(
+          "The.Witcher.S04E01.What.Doesnt.Kill.You.Makes.You.Stronger.1080p.NF.WEB-DL.DDP5.1.Atmos.H.264-FLUX.mkv"
+        )
+
+      assert result.type == :tv_show
+      assert result.title == "The Witcher"
+      assert result.season == 4
+      assert result.episodes == [1]
+      assert result.quality.resolution == "1080p"
+      assert result.quality.source == "WEB-DL"
+      assert result.quality.audio == "DDP5.1"
+      assert result.quality.codec == "H.264"
+      assert result.release_group == "FLUX"
+    end
+
+    test "parses TV show with episode title and quality markers" do
+      result = FileParser.parse("The.Witcher.S04E01.Episode.Title.Here.1080p.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "The Witcher"
+      assert result.season == 4
+      assert result.episodes == [1]
+      assert result.quality.resolution == "1080p"
+    end
+
+    test "parses TV show with episode title, no additional quality markers" do
+      result = FileParser.parse("The.Witcher.S04E01.1080p.WEB-DL.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "The Witcher"
+      assert result.season == 4
+      assert result.episodes == [1]
+      assert result.quality.resolution == "1080p"
+      assert result.quality.source == "WEB-DL"
+    end
+
+    test "parses Breaking Bad with episode title" do
+      result = FileParser.parse("Breaking.Bad.S01E01.Pilot.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Breaking Bad"
+      assert result.season == 1
+      assert result.episodes == [1]
+    end
+
+    test "parses Breaking Bad with episode title and quality" do
+      result = FileParser.parse("Breaking.Bad.S01E01.Pilot.1080p.BluRay.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Breaking Bad"
+      assert result.season == 1
+      assert result.episodes == [1]
+      assert result.quality.resolution == "1080p"
+      assert result.quality.source == "BluRay"
+    end
+  end
+
+  describe "TV show with year after episode marker - task-178" do
+    test "parses TV show with year in parentheses after episode marker" do
+      result = FileParser.parse("The.Witcher.S01E01.(2019).1080p.WEBRIP.HEVC.OPUS2.0.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "The Witcher"
+      assert result.season == 1
+      assert result.episodes == [1]
+      assert result.year == 2019
+      assert result.quality.resolution == "1080p"
+      assert result.quality.source == "WEBRIP"
+      assert result.quality.codec == "HEVC"
+    end
+
+    test "parses TV show with year in brackets after episode marker" do
+      result = FileParser.parse("Breaking.Bad.S01E01.[2008].720p.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Breaking Bad"
+      assert result.season == 1
+      assert result.episodes == [1]
+      assert result.year == 2008
+      assert result.quality.resolution == "720p"
+    end
+
+    test "parses TV show with year and episode title" do
+      result = FileParser.parse("The.Witcher.S01E01.Episode.Title.(2019).1080p.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "The Witcher"
+      assert result.season == 1
+      assert result.episodes == [1]
+      assert result.year == 2019
+      assert result.quality.resolution == "1080p"
+    end
+
+    test "parses TV show with year but no quality markers" do
+      result = FileParser.parse("Show.Name.S02E05.(2020).mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Show Name"
+      assert result.season == 2
+      assert result.episodes == [5]
+      assert result.year == 2020
+    end
+
+    test "parses TV show with year in parentheses and full quality info" do
+      result =
+        FileParser.parse("The.Witcher.S01E01.(2019).2160p.NF.WEB-DL.DDP5.1.HDR.H265-GROUP.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "The Witcher"
+      assert result.season == 1
+      assert result.episodes == [1]
+      assert result.year == 2019
+      assert result.quality.resolution == "2160p"
+      assert result.quality.source == "WEB-DL"
+      assert result.quality.audio == "DDP5.1"
+      assert result.quality.hdr_format == "HDR"
+      assert result.quality.codec == "H265"
+      assert result.release_group == "GROUP"
+    end
+
+    test "still discards episode titles when year is present" do
+      result =
+        FileParser.parse("Show.Name.S01E01.Episode.Title.Text.(2021).1080p.WEB-DL.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Show Name"
+      assert result.season == 1
+      assert result.episodes == [1]
+      assert result.year == 2021
+      assert result.quality.resolution == "1080p"
+      assert result.quality.source == "WEB-DL"
+    end
+  end
 end

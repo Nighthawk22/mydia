@@ -186,7 +186,22 @@ defmodule Mydia.Library.MetadataMatcher do
         end
 
       {:ok, results} ->
-        select_best_tv_match(results, parsed)
+        case select_best_tv_match(results, parsed) do
+          {:ok, match} = success ->
+            success
+
+          {:error, :low_confidence_match} ->
+            # Try series-level fallback for low confidence matches
+            # This happens when we get series results but they don't match well
+            Logger.debug("Low confidence match, trying series-level fallback",
+              title: parsed.title
+            )
+
+            try_series_level_match(parsed, config, opts)
+
+          error ->
+            error
+        end
 
       {:error, reason} = error ->
         Logger.error("Metadata search failed", title: parsed.title, reason: reason)

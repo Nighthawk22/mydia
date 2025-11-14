@@ -302,6 +302,7 @@ defmodule Mydia.Metadata.Provider.Relay do
     release_date = parse_date(get_release_date(data, media_type))
 
     base_metadata = %{
+      id: data["id"],
       provider_id: to_string(provider_id),
       provider: :metadata_relay,
       title: title,

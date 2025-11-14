@@ -72,7 +72,7 @@ defmodule Mydia.Jobs.EventCleanupTest do
       assert :ok = perform_job(EventCleanup, %{})
 
       # Event should be deleted (50 days > 30 days retention)
-      assert length(Events.list_events()) == 0
+      assert Enum.empty?(Events.list_events())
 
       # Reset config
       Application.put_env(:mydia, :event_retention_days, 90)

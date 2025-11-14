@@ -96,7 +96,7 @@ defmodule Mix.Tasks.Mydia.Audit.LibraryTypes do
 
   # Find movies (media_items with type="movie") in :series libraries
   defp find_movies_in_series_libraries(series_only_paths, verbose) do
-    if length(series_only_paths) == 0 do
+    if Enum.empty?(series_only_paths) do
       []
     else
       Mix.shell().info("🎬 Checking for movies in series-only libraries...")
@@ -142,7 +142,7 @@ defmodule Mix.Tasks.Mydia.Audit.LibraryTypes do
 
   # Find TV shows (episodes) in :movies libraries
   defp find_tv_shows_in_movies_libraries(movies_only_paths, verbose) do
-    if length(movies_only_paths) == 0 do
+    if Enum.empty?(movies_only_paths) do
       []
     else
       Mix.shell().info("📺 Checking for TV shows in movies-only libraries...")

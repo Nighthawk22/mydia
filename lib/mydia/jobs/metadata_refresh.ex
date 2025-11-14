@@ -200,13 +200,25 @@ defmodule Mydia.Jobs.MetadataRefresh do
       media_item.tmdb_id ->
         media_item.tmdb_id
 
-      # Try to extract from metadata.id (new format after fix)
-      media_item.metadata && media_item.metadata[:id] ->
-        media_item.metadata[:id]
+      # Try to extract from metadata["id"] (new format after fix - string key)
+      media_item.metadata && media_item.metadata["id"] ->
+        case media_item.metadata["id"] do
+          id when is_integer(id) ->
+            id
 
-      # Try to extract from metadata.provider_id (old format)
-      media_item.metadata && media_item.metadata[:provider_id] ->
-        case Integer.parse(media_item.metadata[:provider_id]) do
+          id when is_binary(id) ->
+            case Integer.parse(id) do
+              {parsed_id, ""} -> parsed_id
+              _ -> nil
+            end
+
+          _ ->
+            nil
+        end
+
+      # Try to extract from metadata["provider_id"] (old format - string key)
+      media_item.metadata && media_item.metadata["provider_id"] ->
+        case Integer.parse(media_item.metadata["provider_id"]) do
           {id, ""} -> id
           _ -> nil
         end

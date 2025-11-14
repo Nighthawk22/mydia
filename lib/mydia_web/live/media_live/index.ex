@@ -20,6 +20,7 @@ defmodule MydiaWeb.MediaLive.Index do
      |> assign(:search_query, "")
      |> assign(:filter_monitored, nil)
      |> assign(:filter_quality, nil)
+     |> assign(:sort_by, "title_asc")
      |> assign(:page, 0)
      |> assign(:has_more, true)
      |> assign(:selection_mode, false)
@@ -66,7 +67,12 @@ defmodule MydiaWeb.MediaLive.Index do
     {:noreply, assign(socket, :view_mode, view_mode)}
   end
 
-  def handle_event("search", %{"value" => query}, socket) do
+  def handle_event("search", params, socket) do
+    require Logger
+    Logger.debug("Search params: #{inspect(params)}")
+
+    query = params["search"] || params["value"] || ""
+
     {:noreply,
      socket
      |> assign(:search_query, query)
@@ -76,6 +82,9 @@ defmodule MydiaWeb.MediaLive.Index do
   end
 
   def handle_event("filter", params, socket) do
+    require Logger
+    Logger.debug("Filter params: #{inspect(params)}")
+
     monitored =
       case params["monitored"] do
         "all" -> nil
@@ -91,10 +100,14 @@ defmodule MydiaWeb.MediaLive.Index do
         _ -> nil
       end
 
+    sort_by = params["sort_by"] || socket.assigns.sort_by
+    Logger.debug("Sort by: #{inspect(sort_by)}")
+
     {:noreply,
      socket
      |> assign(:filter_monitored, monitored)
      |> assign(:filter_quality, quality)
+     |> assign(:sort_by, sort_by)
      |> assign(:page, 0)
      |> assign(:selected_ids, MapSet.new())
      |> load_media_items(reset: true)}
@@ -454,6 +467,9 @@ defmodule MydiaWeb.MediaLive.Index do
     # Apply quality filtering (client-side for now)
     items = apply_quality_filter(items, socket.assigns.filter_quality)
 
+    # Apply sorting
+    items = apply_sorting(items, socket.assigns.sort_by)
+
     # Apply pagination
     paginated_items = items |> Enum.drop(offset) |> Enum.take(limit)
     has_more = length(items) > offset + limit
@@ -529,6 +545,109 @@ defmodule MydiaWeb.MediaLive.Index do
       item.media_files
       |> Enum.any?(fn file -> file.resolution == quality end)
     end)
+  end
+
+  defp apply_sorting(items, sort_by) do
+    require Logger
+    Logger.debug("Applying sort: #{inspect(sort_by)} to #{length(items)} items")
+
+    case sort_by do
+      "title_asc" ->
+        Enum.sort_by(items, &String.downcase(&1.title || ""), :asc)
+
+      "title_desc" ->
+        Enum.sort_by(items, &String.downcase(&1.title || ""), :desc)
+
+      "year_asc" ->
+        Enum.sort_by(items, &(&1.year || 0), :asc)
+
+      "year_desc" ->
+        Enum.sort_by(items, &(&1.year || 0), :desc)
+
+      "added_asc" ->
+        Enum.sort_by(items, & &1.inserted_at, :asc)
+
+      "added_desc" ->
+        Enum.sort_by(items, & &1.inserted_at, :desc)
+
+      "rating_asc" ->
+        Enum.sort_by(items, &get_rating(&1), :asc)
+
+      "rating_desc" ->
+        Enum.sort_by(items, &get_rating(&1), :desc)
+
+      "last_aired_asc" ->
+        Enum.sort_by(items, &get_last_aired_date(&1), {:asc, NaiveDateTime})
+
+      "last_aired_desc" ->
+        Enum.sort_by(items, &get_last_aired_date(&1), {:desc, NaiveDateTime})
+
+      "next_aired_asc" ->
+        Enum.sort_by(items, &get_next_aired_date(&1), {:asc, NaiveDateTime})
+
+      "next_aired_desc" ->
+        Enum.sort_by(items, &get_next_aired_date(&1), {:desc, NaiveDateTime})
+
+      "episode_count_asc" ->
+        Enum.sort_by(items, &get_episode_count(&1), :asc)
+
+      "episode_count_desc" ->
+        Enum.sort_by(items, &get_episode_count(&1), :desc)
+
+      _ ->
+        # Default to title ascending
+        Enum.sort_by(items, &String.downcase(&1.title || ""), :asc)
+    end
+  end
+
+  defp get_rating(media_item) do
+    case media_item.metadata do
+      %{"vote_average" => rating} when is_number(rating) -> rating
+      _ -> 0
+    end
+  end
+
+  defp get_last_aired_date(media_item) do
+    if media_item.type == "tv_show" && Ecto.assoc_loaded?(media_item.episodes) do
+      media_item.episodes
+      |> Enum.map(& &1.air_date)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.sort({:desc, NaiveDateTime})
+      |> List.first()
+      |> case do
+        nil -> ~N[1970-01-01 00:00:00]
+        date -> date
+      end
+    else
+      ~N[1970-01-01 00:00:00]
+    end
+  end
+
+  defp get_next_aired_date(media_item) do
+    if media_item.type == "tv_show" && Ecto.assoc_loaded?(media_item.episodes) do
+      now = NaiveDateTime.utc_now()
+
+      media_item.episodes
+      |> Enum.map(& &1.air_date)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.filter(&(NaiveDateTime.compare(&1, now) == :gt))
+      |> Enum.sort({:asc, NaiveDateTime})
+      |> List.first()
+      |> case do
+        nil -> ~N[2999-12-31 23:59:59]
+        date -> date
+      end
+    else
+      ~N[2999-12-31 23:59:59]
+    end
+  end
+
+  defp get_episode_count(media_item) do
+    if media_item.type == "tv_show" && Ecto.assoc_loaded?(media_item.episodes) do
+      length(media_item.episodes)
+    else
+      0
+    end
   end
 
   defp get_poster_url(media_item) do
@@ -628,5 +747,29 @@ defmodule MydiaWeb.MediaLive.Index do
 
   defp format_episode_count(%{downloaded: downloaded, total: total}) do
     "#{downloaded}/#{total} episodes"
+  end
+
+  defp format_episode_count(_), do: nil
+
+  # File indicator helpers for unmonitored items
+  defp show_file_indicator?(status, counts) do
+    status == :not_monitored && has_files?(counts)
+  end
+
+  defp has_files?(nil), do: false
+  defp has_files?(%{has_files: has_files}), do: has_files
+  defp has_files?(%{downloaded: downloaded}), do: downloaded > 0
+
+  defp get_file_indicator_tooltip(counts) do
+    case counts do
+      %{file_count: count} when count > 0 ->
+        "#{count} file#{if count == 1, do: "", else: "s"} available"
+
+      %{downloaded: downloaded, total: _total} when downloaded > 0 ->
+        "#{downloaded} episode#{if downloaded == 1, do: "", else: "s"} downloaded"
+
+      _ ->
+        "Files available"
+    end
   end
 end

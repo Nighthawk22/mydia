@@ -509,7 +509,11 @@ defmodule Mydia.Media do
       iex> get_media_status(%MediaItem{type: "movie", monitored: true})
       {:downloaded, nil}
   """
-  def get_media_status(%MediaItem{type: "movie", monitored: false}), do: {:not_monitored, nil}
+  def get_media_status(%MediaItem{type: "movie", monitored: false} = media_item) do
+    # For non-monitored movies, include file count information
+    file_count = length(media_item.media_files)
+    {:not_monitored, %{has_files: file_count > 0, file_count: file_count}}
+  end
 
   def get_media_status(%MediaItem{type: "movie"} = media_item) do
     has_files = length(media_item.media_files) > 0

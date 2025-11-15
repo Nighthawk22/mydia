@@ -43,6 +43,12 @@ fi
 # Setup and migrate database
 echo "==> Setting up database..."
 mix ecto.create --quiet 2>/dev/null || echo "Database already exists"
+
+# Create backup before running migrations if there are pending migrations
+echo "==> Checking for pending migrations and creating backup if needed..."
+mix mydia.backup_before_migrate
+
+# Run migrations
 mix ecto.migrate
 
 # Install and build assets if not already built

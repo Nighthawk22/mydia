@@ -186,6 +186,15 @@ custom classes must fully style the input
 <!-- phoenix:ecto-start -->
 ## Ecto Guidelines
 
+### Database
+
+- This project uses **SQLite exclusively** for all environments (development, test, and production)
+- **Never** use PostgreSQL-specific features, syntax, or extensions
+- **Never** suggest or implement PostgreSQL migrations or configurations
+- Use SQLite-compatible syntax for all queries and migrations
+
+### General Guidelines
+
 - **Always** preload Ecto associations in queries when they'll be accessed in templates, ie a message that needs to reference the `message.user.email`
 - Remember `import Ecto.Query` and other supporting modules when you write `seeds.exs`
 - `Ecto.Schema` fields always use the `:string` type, even for `:text`, columns, ie: `field :name, :string`

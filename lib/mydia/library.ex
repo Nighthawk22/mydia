@@ -111,26 +111,38 @@ defmodule Mydia.Library do
 
   This function should be called before deleting the database record
   to ensure the file path is available.
+
+  The library_path association must be preloaded.
   """
   def delete_media_file_from_disk(%MediaFile{} = media_file) do
-    if File.exists?(media_file.path) do
-      case File.rm(media_file.path) do
-        :ok ->
-          Logger.info("Deleted media file from disk", path: media_file.path)
+    case MediaFile.absolute_path(media_file) do
+      nil ->
+        Logger.error("Cannot delete media file from disk - path could not be resolved",
+          media_file_id: media_file.id
+        )
+
+        {:error, :path_not_resolved}
+
+      absolute_path ->
+        if File.exists?(absolute_path) do
+          case File.rm(absolute_path) do
+            :ok ->
+              Logger.info("Deleted media file from disk", path: absolute_path)
+              :ok
+
+            {:error, reason} ->
+              Logger.error("Failed to delete media file from disk",
+                path: absolute_path,
+                reason: inspect(reason)
+              )
+
+              {:error, reason}
+          end
+        else
+          # File doesn't exist, consider it a success
+          Logger.debug("Media file already doesn't exist on disk", path: absolute_path)
           :ok
-
-        {:error, reason} ->
-          Logger.error("Failed to delete media file from disk",
-            path: media_file.path,
-            reason: inspect(reason)
-          )
-
-          {:error, reason}
-      end
-    else
-      # File doesn't exist, consider it a success
-      Logger.debug("Media file already doesn't exist on disk", path: media_file.path)
-      :ok
+        end
     end
   end
 
@@ -224,7 +236,12 @@ defmodule Mydia.Library do
   end
 
   defp match_file_to_episode(media_file, media_item_id) do
-    filename = Path.basename(media_file.path)
+    # Use relative_path for filename parsing (fallback to path for legacy data)
+    filename =
+      case media_file.relative_path do
+        nil -> Path.basename(media_file.path)
+        relative_path -> Path.basename(relative_path)
+      end
 
     # Parse the filename to extract season/episode information
     parsed_info = FileParser.parse(filename)
@@ -322,8 +339,13 @@ defmodule Mydia.Library do
           case Scanner.scan(base_directory, recursive: true) do
             {:ok, scan_result} ->
               # Get existing media file paths for this series
-              existing_files = get_media_files_for_item(media_item_id)
-              existing_paths = MapSet.new(existing_files, & &1.path)
+              existing_files = get_media_files_for_item(media_item_id, preload: [:library_path])
+
+              existing_paths =
+                existing_files
+                |> Enum.map(&MediaFile.absolute_path/1)
+                |> Enum.reject(&is_nil/1)
+                |> MapSet.new()
 
               # Find new files (not already in database)
               new_files =
@@ -430,8 +452,13 @@ defmodule Mydia.Library do
                 end)
 
               # Get existing media file paths for this series
-              existing_files = get_media_files_for_item(media_item_id)
-              existing_paths = MapSet.new(existing_files, & &1.path)
+              existing_files = get_media_files_for_item(media_item_id, preload: [:library_path])
+
+              existing_paths =
+                existing_files
+                |> Enum.map(&MediaFile.absolute_path/1)
+                |> Enum.reject(&is_nil/1)
+                |> MapSet.new()
 
               # Find new files for this season
               new_files =
@@ -540,8 +567,13 @@ defmodule Mydia.Library do
           case Scanner.scan(base_directory, recursive: false) do
             {:ok, scan_result} ->
               # Get existing media file paths for this movie
-              existing_files = get_media_files_for_item(media_item_id)
-              existing_paths = MapSet.new(existing_files, & &1.path)
+              existing_files = get_media_files_for_item(media_item_id, preload: [:library_path])
+
+              existing_paths =
+                existing_files
+                |> Enum.map(&MediaFile.absolute_path/1)
+                |> Enum.reject(&is_nil/1)
+                |> MapSet.new()
 
               # Find new files (not already in database)
               new_files =
@@ -586,7 +618,7 @@ defmodule Mydia.Library do
 
   # Finds the base directory for a TV series by looking at existing media file paths
   defp find_series_base_directory(media_item_id) do
-    media_files = get_media_files_for_item(media_item_id, preload: [:episode])
+    media_files = get_media_files_for_item(media_item_id, preload: [:episode, :library_path])
 
     case media_files do
       [] ->
@@ -600,20 +632,36 @@ defmodule Mydia.Library do
         # Get the most common directory (in case files are in different locations)
         base_dir =
           files
-          |> Enum.map(fn file -> Path.dirname(file.path) end)
+          |> Enum.map(fn file ->
+            case MediaFile.absolute_path(file) do
+              nil -> nil
+              path -> Path.dirname(path)
+            end
+          end)
+          |> Enum.reject(&is_nil/1)
           |> Enum.frequencies()
-          |> Enum.max_by(fn {_dir, count} -> count end)
+          |> Enum.max_by(fn {_dir, count} -> count end, fn -> {nil, 0} end)
           |> elem(0)
 
-        # Go up one level to get the series directory (files are usually in season subdirs)
-        series_dir = Path.dirname(base_dir)
+        case base_dir do
+          nil ->
+            Logger.error("Could not determine series base directory - no valid paths",
+              media_item_id: media_item_id
+            )
 
-        Logger.debug("Detected series base directory",
-          media_item_id: media_item_id,
-          directory: series_dir
-        )
+            {:error, :no_valid_paths}
 
-        {:ok, series_dir}
+          dir ->
+            # Go up one level to get the series directory (files are usually in season subdirs)
+            series_dir = Path.dirname(dir)
+
+            Logger.debug("Detected series base directory",
+              media_item_id: media_item_id,
+              directory: series_dir
+            )
+
+            {:ok, series_dir}
+        end
     end
   end
 
@@ -655,7 +703,7 @@ defmodule Mydia.Library do
 
   # Finds the base directory for a movie by looking at existing media file paths
   defp find_movie_base_directory(media_item_id) do
-    media_files = get_media_files_for_item(media_item_id)
+    media_files = get_media_files_for_item(media_item_id, preload: [:library_path])
 
     case media_files do
       [] ->
@@ -669,17 +717,33 @@ defmodule Mydia.Library do
         # Get the most common directory (movies are typically in a single directory)
         movie_dir =
           files
-          |> Enum.map(fn file -> Path.dirname(file.path) end)
+          |> Enum.map(fn file ->
+            case MediaFile.absolute_path(file) do
+              nil -> nil
+              path -> Path.dirname(path)
+            end
+          end)
+          |> Enum.reject(&is_nil/1)
           |> Enum.frequencies()
-          |> Enum.max_by(fn {_dir, count} -> count end)
+          |> Enum.max_by(fn {_dir, count} -> count end, fn -> {nil, 0} end)
           |> elem(0)
 
-        Logger.debug("Detected movie base directory",
-          media_item_id: media_item_id,
-          directory: movie_dir
-        )
+        case movie_dir do
+          nil ->
+            Logger.error("Could not determine movie base directory - no valid paths",
+              media_item_id: media_item_id
+            )
 
-        {:ok, movie_dir}
+            {:error, :no_valid_paths}
+
+          dir ->
+            Logger.debug("Detected movie base directory",
+              media_item_id: media_item_id,
+              directory: dir
+            )
+
+            {:ok, dir}
+        end
     end
   end
 
@@ -820,79 +884,99 @@ defmodule Mydia.Library do
 
   Uses both filename parsing and FFprobe analysis, preferring actual file metadata.
 
+  The library_path association must be preloaded.
+
   Returns {:ok, updated_media_file} or {:error, reason}.
   """
   def refresh_file_metadata(%MediaFile{} = media_file) do
-    if File.exists?(media_file.path) do
-      # Parse filename for fallback metadata
-      filename_metadata = FileParser.parse(Path.basename(media_file.path))
+    case MediaFile.absolute_path(media_file) do
+      nil ->
+        Logger.error("Cannot refresh file metadata - path could not be resolved",
+          file_id: media_file.id
+        )
 
-      # Analyze actual file with FFprobe
-      file_metadata =
-        case FileAnalyzer.analyze(media_file.path) do
-          {:ok, metadata} ->
-            Logger.debug("Extracted file metadata via FFprobe",
-              file_id: media_file.id,
-              resolution: metadata.resolution,
-              codec: metadata.codec
-            )
+        {:error, :path_not_resolved}
 
-            metadata
+      absolute_path ->
+        if File.exists?(absolute_path) do
+          # Use relative_path for filename parsing (more stable than absolute path)
+          filename =
+            case media_file.relative_path do
+              nil -> Path.basename(absolute_path)
+              relative_path -> Path.basename(relative_path)
+            end
 
-          {:error, reason} ->
-            Logger.warning("FFprobe analysis failed, using filename metadata only",
-              file_id: media_file.id,
-              reason: reason
-            )
+          # Parse filename for fallback metadata
+          filename_metadata = FileParser.parse(filename)
 
-            %{
-              resolution: nil,
-              codec: nil,
-              audio_codec: nil,
-              bitrate: nil,
-              hdr_format: nil,
-              size: nil
-            }
+          # Analyze actual file with FFprobe
+          file_metadata =
+            case FileAnalyzer.analyze(absolute_path) do
+              {:ok, metadata} ->
+                Logger.debug("Extracted file metadata via FFprobe",
+                  file_id: media_file.id,
+                  resolution: metadata.resolution,
+                  codec: metadata.codec
+                )
+
+                metadata
+
+              {:error, reason} ->
+                Logger.warning("FFprobe analysis failed, using filename metadata only",
+                  file_id: media_file.id,
+                  reason: reason
+                )
+
+                %{
+                  resolution: nil,
+                  codec: nil,
+                  audio_codec: nil,
+                  bitrate: nil,
+                  hdr_format: nil,
+                  size: nil
+                }
+            end
+
+          # Merge: prefer file analysis, fall back to filename
+          update_attrs = %{
+            resolution: file_metadata.resolution || filename_metadata.quality.resolution,
+            codec: file_metadata.codec || filename_metadata.quality.codec,
+            audio_codec: file_metadata.audio_codec || filename_metadata.quality.audio,
+            bitrate: file_metadata.bitrate,
+            hdr_format:
+              file_metadata.hdr_format || Map.get(filename_metadata.quality, :hdr_format),
+            size: file_metadata.size || File.stat!(absolute_path).size,
+            verified_at: DateTime.utc_now()
+          }
+
+          case update_media_file(media_file, update_attrs) do
+            {:ok, updated_file} ->
+              Logger.info("Refreshed file metadata",
+                file_id: media_file.id,
+                path: absolute_path,
+                resolution: updated_file.resolution,
+                codec: updated_file.codec,
+                audio: updated_file.audio_codec
+              )
+
+              {:ok, updated_file}
+
+            {:error, changeset} ->
+              Logger.error("Failed to update media file with refreshed metadata",
+                file_id: media_file.id,
+                errors: inspect(changeset.errors)
+              )
+
+              {:error, :update_failed}
+          end
+        else
+          Logger.warning("File does not exist, cannot refresh metadata",
+            file_id: media_file.id,
+            path: absolute_path
+          )
+
+          {:error, :file_not_found}
         end
-
-      # Merge: prefer file analysis, fall back to filename
-      update_attrs = %{
-        resolution: file_metadata.resolution || filename_metadata.quality.resolution,
-        codec: file_metadata.codec || filename_metadata.quality.codec,
-        audio_codec: file_metadata.audio_codec || filename_metadata.quality.audio,
-        bitrate: file_metadata.bitrate,
-        hdr_format: file_metadata.hdr_format || Map.get(filename_metadata.quality, :hdr_format),
-        size: file_metadata.size || File.stat!(media_file.path).size,
-        verified_at: DateTime.utc_now()
-      }
-
-      case update_media_file(media_file, update_attrs) do
-        {:ok, updated_file} ->
-          Logger.info("Refreshed file metadata",
-            file_id: media_file.id,
-            path: media_file.path,
-            resolution: updated_file.resolution,
-            codec: updated_file.codec,
-            audio: updated_file.audio_codec
-          )
-
-          {:ok, updated_file}
-
-        {:error, changeset} ->
-          Logger.error("Failed to update media file with refreshed metadata",
-            file_id: media_file.id,
-            errors: inspect(changeset.errors)
-          )
-
-          {:error, :update_failed}
-      end
-    else
-      Logger.warning("File does not exist, cannot refresh metadata",
-        file_id: media_file.id,
-        path: media_file.path
-      )
-
-      {:error, :file_not_found}
     end
   end
 
@@ -902,7 +986,7 @@ defmodule Mydia.Library do
   Returns {:ok, updated_media_file} or {:error, reason}.
   """
   def refresh_file_metadata_by_id(media_file_id) do
-    media_file = get_media_file!(media_file_id)
+    media_file = get_media_file!(media_file_id, preload: [:library_path])
     refresh_file_metadata(media_file)
   end
 
@@ -928,7 +1012,7 @@ defmodule Mydia.Library do
   This can be a long-running operation. Returns the count of successfully refreshed files.
   """
   def refresh_all_file_metadata do
-    media_files = list_media_files()
+    media_files = list_media_files(preload: [:library_path])
 
     Logger.info("Starting bulk metadata refresh", total_files: length(media_files))
 

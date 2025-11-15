@@ -21,13 +21,14 @@ defmodule Mydia.Library.FileRenamer do
   - `:extension` - The file extension
   """
   def generate_rename_preview(%MediaFile{} = file) do
-    # Get the file details
-    directory = Path.dirname(file.path)
-    extension = Path.extname(file.path)
-    current_filename = Path.basename(file.path)
-
     # Load associations if needed - force reload to ensure we have fresh data
-    file = Repo.preload(file, [:media_item, episode: :media_item], force: true)
+    file = Repo.preload(file, [:library_path, :media_item, episode: :media_item], force: true)
+
+    # Get the file details - use absolute_path for filesystem operations
+    current_path = MediaFile.absolute_path(file)
+    directory = Path.dirname(current_path)
+    extension = Path.extname(current_path)
+    current_filename = Path.basename(current_path)
 
     # Generate proposed filename based on media type
     proposed_filename =
@@ -53,7 +54,7 @@ defmodule Mydia.Library.FileRenamer do
     proposed_path = Path.join(directory, proposed_filename)
 
     %{
-      current_path: file.path,
+      current_path: current_path,
       proposed_path: proposed_path,
       current_filename: current_filename,
       proposed_filename: proposed_filename,
@@ -96,7 +97,9 @@ defmodule Mydia.Library.FileRenamer do
   Returns `{:ok, updated_file}` on success, or `{:error, reason}` on failure.
   """
   def rename_file(%MediaFile{} = file, new_path) when is_binary(new_path) do
-    current_path = file.path
+    # Preload library_path to resolve absolute path
+    file = Repo.preload(file, :library_path)
+    current_path = MediaFile.absolute_path(file)
 
     cond do
       # Check if file exists
@@ -119,13 +122,18 @@ defmodule Mydia.Library.FileRenamer do
 
         case File.rename(current_path, new_path) do
           :ok ->
-            # Update the database
-            case Mydia.Library.update_media_file(file, %{path: new_path}) do
+            # Calculate the new relative path
+            library_path_root = file.library_path.path
+            new_relative_path = Path.relative_to(new_path, library_path_root)
+
+            # Update the database with the new relative path
+            case Mydia.Library.update_media_file(file, %{relative_path: new_relative_path}) do
               {:ok, updated_file} ->
                 Logger.info("Successfully renamed file",
                   file_id: file.id,
                   old_path: current_path,
-                  new_path: new_path
+                  new_path: new_path,
+                  new_relative_path: new_relative_path
                 )
 
                 {:ok, updated_file}
@@ -236,7 +244,8 @@ defmodule Mydia.Library.FileRenamer do
   defp generate_filename_from_path(%MediaFile{} = file, extension) do
     # For TV show files not associated with episodes, parse the filename
     # to extract season/episode info
-    basename = Path.basename(file.path, extension)
+    absolute_path = MediaFile.absolute_path(file)
+    basename = Path.basename(absolute_path, extension)
     media_item = file.media_item
 
     # Try to extract S##E## or similar pattern from filename
@@ -265,14 +274,15 @@ defmodule Mydia.Library.FileRenamer do
 
       _ ->
         # Can't parse, keep original filename
-        Path.basename(file.path)
+        Path.basename(absolute_path)
     end
   end
 
   defp get_quality_for_file(%MediaFile{} = file) do
     # Try to parse resolution from the current filename first
     # This handles cases where DB has wrong/stale data
-    basename = Path.basename(file.path)
+    absolute_path = MediaFile.absolute_path(file)
+    basename = Path.basename(absolute_path)
 
     parsed_resolution =
       case Regex.run(~r/\b(\d{3,4}p)\b/i, basename) do

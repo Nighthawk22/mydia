@@ -306,6 +306,11 @@ config :error_tracker,
   # Enable in production and development, but not test
   enabled: config_env() != :test
 
+# Configure Logger backends for crash reporting
+# The crash reporter backend will automatically capture errors when enabled
+config :logger,
+  backends: [:console, Mydia.CrashReporter.LoggerBackend]
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

@@ -50,6 +50,28 @@ defmodule Mydia.CrashReporter.Queue do
   end
 
   @doc """
+  Returns all reports in the queue with their metadata.
+  """
+  @spec list_all() :: [map()]
+  def list_all do
+    try do
+      :ets.tab2list(@table_name)
+      |> Enum.map(fn {_id, entry} -> entry end)
+      |> Enum.sort_by(& &1.enqueued_at)
+    rescue
+      _ -> []
+    end
+  end
+
+  @doc """
+  Clears all reports from the queue.
+  """
+  @spec clear_all() :: :ok
+  def clear_all do
+    GenServer.call(__MODULE__, :clear_all)
+  end
+
+  @doc """
   Processes all queued reports immediately (for testing).
   """
   @spec process_all() :: :ok
@@ -92,6 +114,12 @@ defmodule Mydia.CrashReporter.Queue do
     end
 
     {:noreply, state}
+  end
+
+  @impl true
+  def handle_call(:clear_all, _from, state) do
+    :ets.delete_all_objects(@table_name)
+    {:reply, :ok, state}
   end
 
   @impl true

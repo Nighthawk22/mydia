@@ -614,6 +614,70 @@ defmodule MydiaWeb.AdminConfigLive.Index do
     end
   end
 
+  ## Crash Reporting Events
+
+  @impl true
+  def handle_event("clear_crash_queue", _params, socket) do
+    Mydia.CrashReporter.clear_queue()
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "Crash report queue cleared")
+     |> load_configuration_data()}
+  end
+
+  @impl true
+  def handle_event("show_manual_report_form", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_manual_report_modal, true)
+     |> assign(:manual_report_error, "")
+     |> assign(:manual_report_notes, "")}
+  end
+
+  @impl true
+  def handle_event("close_manual_report_modal", _params, socket) do
+    {:noreply, assign(socket, :show_manual_report_modal, false)}
+  end
+
+  @impl true
+  def handle_event(
+        "submit_manual_crash_report",
+        %{"error" => error_message, "notes" => notes},
+        socket
+      ) do
+    # Create a simple runtime error from the user's description
+    error = %RuntimeError{message: error_message}
+
+    # Add notes to metadata
+    metadata = %{
+      user_submitted: true,
+      notes: notes,
+      submitted_by: socket.assigns.current_user.email
+    }
+
+    case Mydia.CrashReporter.submit_manual_report(error, nil, metadata) do
+      {:ok, report_id} ->
+        {:noreply,
+         socket
+         |> assign(:show_manual_report_modal, false)
+         |> put_flash(:info, "Crash report submitted successfully (ID: #{report_id})")}
+
+      {:error, reason} ->
+        MydiaLogger.log_error(:liveview, "Failed to submit manual crash report",
+          error: reason,
+          operation: :submit_manual_crash_report,
+          user_id: socket.assigns.current_user.id
+        )
+
+        error_msg = MydiaLogger.user_error_message(:submit_manual_crash_report, reason)
+
+        {:noreply,
+         socket
+         |> put_flash(:error, "Failed to submit crash report: #{error_msg}")}
+    end
+  end
+
   ## Library Path Events
 
   @impl true
@@ -795,10 +859,13 @@ defmodule MydiaWeb.AdminConfigLive.Index do
     |> assign(:indexers, indexers)
     |> assign(:indexer_health, indexer_health)
     |> assign(:library_paths, Settings.list_library_paths())
+    |> assign(:crash_report_stats, Mydia.CrashReporter.stats())
+    |> assign(:queued_crash_reports, Mydia.CrashReporter.list_queued_reports())
     |> assign(:show_quality_profile_modal, false)
     |> assign(:show_download_client_modal, false)
     |> assign(:show_indexer_modal, false)
     |> assign(:show_library_path_modal, false)
+    |> assign(:show_manual_report_modal, false)
   end
 
   defp get_client_health_status(clients) do
@@ -1134,4 +1201,16 @@ defmodule MydiaWeb.AdminConfigLive.Index do
   end
 
   defp format_indexer_type(type), do: to_string(type)
+
+  defp format_relative_time(monotonic_time) do
+    now = System.monotonic_time(:second)
+    diff = now - monotonic_time
+
+    cond do
+      diff < 60 -> "#{diff}s ago"
+      diff < 3600 -> "#{div(diff, 60)}m ago"
+      diff < 86400 -> "#{div(diff, 3600)}h ago"
+      true -> "#{div(diff, 86400)}d ago"
+    end
+  end
 end

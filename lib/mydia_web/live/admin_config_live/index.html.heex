@@ -98,6 +98,90 @@
                     </div>
                   </div>
                 </div>
+                <%!-- Pending Reports Queue --%>
+                <%= if @crash_report_stats.enabled && @crash_report_stats.queued_reports > 0 do %>
+                  <div class="card bg-base-200 mb-4">
+                    <div class="card-body">
+                      <div class="flex items-center justify-between mb-2">
+                        <h3 class="card-title text-lg">
+                          Pending Reports Queue
+                          <span class="badge badge-warning">
+                            {@crash_report_stats.queued_reports}
+                          </span>
+                        </h3>
+                        <button
+                          class="btn btn-sm btn-error"
+                          phx-click="clear_crash_queue"
+                          data-confirm="Are you sure you want to clear all pending crash reports?"
+                        >
+                          <.icon name="hero-trash" class="w-4 h-4" /> Clear Queue
+                        </button>
+                      </div>
+                      <p class="text-sm text-base-content/70 mb-3">
+                        The following crash reports are queued for transmission to the metadata relay.
+                        They will be sent automatically with retry logic.
+                      </p>
+                      <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                          <thead>
+                            <tr>
+                              <th>Report ID</th>
+                              <th>Error Type</th>
+                              <th>Queued At</th>
+                              <th>Retries</th>
+                              <th>Last Attempt</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <%= for report <- @queued_crash_reports do %>
+                              <tr>
+                                <td class="font-mono text-xs">
+                                  {String.slice(report.id, 0..15)}...
+                                </td>
+                                <td class="text-sm">
+                                  {get_in(report.report, [:error_type]) || "Unknown"}
+                                </td>
+                                <td class="text-sm">
+                                  {format_relative_time(report.enqueued_at)}
+                                </td>
+                                <td>
+                                  <span class={[
+                                    "badge badge-sm",
+                                    if(report.retries > 0,
+                                      do: "badge-warning",
+                                      else: "badge-ghost"
+                                    )
+                                  ]}>
+                                    {report.retries}
+                                  </span>
+                                </td>
+                                <td class="text-sm">
+                                  {if report.last_attempt_at,
+                                    do: format_relative_time(report.last_attempt_at),
+                                    else: "Never"}
+                                </td>
+                              </tr>
+                            <% end %>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                <% end %>
+                <%!-- Manual Report Submission --%>
+                <div class="card bg-base-200 mb-4">
+                  <div class="card-body">
+                    <h3 class="card-title text-lg">Manual Report Submission</h3>
+                    <p class="text-sm text-base-content/70 mb-3">
+                      If you encounter an error and want to report it to developers without enabling automatic sharing,
+                      you can manually submit a crash report here. This works regardless of whether automatic
+                      crash reporting is enabled.
+                    </p>
+                    <button class="btn btn-primary btn-sm" phx-click="show_manual_report_form">
+                      <.icon name="hero-paper-airplane" class="w-4 h-4" /> Submit Error Report
+                    </button>
+                  </div>
+                </div>
               <% end %>
 
               <form phx-change="update_setting_form" id={"settings-form-#{category}"}>
@@ -845,6 +929,75 @@
               <button type="submit" class="btn btn-primary">Save</button>
             </div>
           </.form>
+        </div>
+      </div>
+    <% end %>
+    <%!-- Manual Crash Report Modal --%>
+    <%= if assigns[:show_manual_report_modal] do %>
+      <div class="modal modal-open">
+        <div class="modal-box max-w-2xl">
+          <h3 class="font-bold text-lg mb-4">Submit Manual Crash Report</h3>
+          <div class="alert alert-info mb-4">
+            <.icon name="hero-information-circle" class="w-6 h-6" />
+            <div class="text-sm">
+              <p class="font-semibold mb-1">Privacy Notice</p>
+              <p>
+                Your report will be sanitized before sending. Usernames, secrets, and credentials
+                will be redacted. The report will include the error description, your notes,
+                and system information (Elixir version, OTP version, etc.).
+              </p>
+            </div>
+          </div>
+
+          <form phx-submit="submit_manual_crash_report" id="manual-crash-report-form">
+            <div class="space-y-4">
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text">
+                    Error Description <span class="text-error">*</span>
+                  </span>
+                </label>
+                <textarea
+                  name="error"
+                  rows="3"
+                  class="textarea textarea-bordered"
+                  placeholder="Describe the error you encountered..."
+                  required
+                ></textarea>
+                <label class="label">
+                  <span class="label-text-alt">
+                    Briefly describe what went wrong (e.g., "Failed to import TV show")
+                  </span>
+                </label>
+              </div>
+
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text">Additional Context (Optional)</span>
+                </label>
+                <textarea
+                  name="notes"
+                  rows="4"
+                  class="textarea textarea-bordered"
+                  placeholder="Add any additional context that might help developers..."
+                ></textarea>
+                <label class="label">
+                  <span class="label-text-alt">
+                    Include steps to reproduce, what you expected vs. what happened, etc.
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="modal-action">
+              <button type="button" class="btn" phx-click="close_manual_report_modal">
+                Cancel
+              </button>
+              <button type="submit" class="btn btn-primary">
+                <.icon name="hero-paper-airplane" class="w-4 h-4" /> Send Report
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     <% end %>

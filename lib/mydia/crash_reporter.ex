@@ -148,6 +148,34 @@ defmodule Mydia.CrashReporter do
     }
   end
 
+  @doc """
+  Returns all queued crash reports waiting to be sent.
+
+  ## Examples
+
+      iex> Mydia.CrashReporter.list_queued_reports()
+      []
+
+  """
+  @spec list_queued_reports() :: [map()]
+  def list_queued_reports do
+    Queue.list_all()
+  end
+
+  @doc """
+  Clears all queued crash reports.
+
+  ## Examples
+
+      iex> Mydia.CrashReporter.clear_queue()
+      :ok
+
+  """
+  @spec clear_queue() :: :ok
+  def clear_queue do
+    Queue.clear_all()
+  end
+
   # Private functions
 
   defp do_report(error, stacktrace, metadata, opts \\ []) do

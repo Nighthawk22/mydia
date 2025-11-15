@@ -28,6 +28,9 @@ config :mydia, MydiaWeb.Endpoint,
 # Print only warnings and errors during test
 config :logger, level: :warning
 
+# Disable crash reporter logger backend in test to avoid SQL Sandbox issues
+config :logger, backends: [:console]
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 

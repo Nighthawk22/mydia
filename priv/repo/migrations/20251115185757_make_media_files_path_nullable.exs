@@ -30,8 +30,7 @@ defmodule Mydia.Repo.Migrations.MakeMediaFilesPathNullable do
       inserted_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       CHECK(
-        (media_item_id IS NOT NULL AND episode_id IS NULL) OR
-        (media_item_id IS NULL AND episode_id IS NOT NULL)
+        NOT (media_item_id IS NOT NULL AND episode_id IS NOT NULL)
       )
     )
     """
@@ -80,8 +79,7 @@ defmodule Mydia.Repo.Migrations.MakeMediaFilesPathNullable do
       inserted_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       CHECK(
-        (media_item_id IS NOT NULL AND episode_id IS NULL) OR
-        (media_item_id IS NULL AND episode_id IS NOT NULL)
+        NOT (media_item_id IS NOT NULL AND episode_id IS NOT NULL)
       )
     )
     """

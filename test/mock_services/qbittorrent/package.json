@@ -1,0 +1,14 @@
+{
+  "name": "mock-qbittorrent",
+  "version": "1.0.0",
+  "description": "Mock qBittorrent Web API for E2E testing",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "cookie-parser": "^1.4.6"
+  }
+}

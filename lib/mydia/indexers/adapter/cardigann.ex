@@ -54,7 +54,7 @@ defmodule Mydia.Indexers.Adapter.Cardigann do
   @behaviour Mydia.Indexers.Adapter
 
   alias Mydia.Indexers.{CardigannParser, CardigannSearchEngine, CardigannResultParser}
-  alias Mydia.Indexers.CardigannDefinition
+  alias Mydia.Indexers.{CardigannDefinition, CardigannAuth}
   alias Mydia.Indexers.Adapter.Error
   alias Mydia.Repo
 
@@ -80,7 +80,7 @@ defmodule Mydia.Indexers.Adapter.Cardigann do
     with {:ok, definition} <- fetch_definition(config),
          {:ok, parsed} <- parse_definition(definition),
          {:ok, search_opts} <- build_search_opts(query, opts),
-         {:ok, user_config} <- build_user_config(config),
+         {:ok, user_config} <- get_or_create_session(parsed, definition, config),
          {:ok, response} <-
            CardigannSearchEngine.execute_search(parsed, search_opts, user_config),
          {:ok, results} <- CardigannResultParser.parse_results(parsed, response, config.name) do
@@ -171,17 +171,71 @@ defmodule Mydia.Indexers.Adapter.Cardigann do
     {:ok, search_opts}
   end
 
-  defp build_user_config(config) do
+  defp get_or_create_session(parsed, definition, config) do
     user_settings = Map.get(config, :user_settings, %{})
 
-    user_config = %{
+    # Build user config from settings
+    credentials = %{
       username: Map.get(user_settings, :username),
       password: Map.get(user_settings, :password),
       api_key: Map.get(user_settings, :api_key),
       cookies: Map.get(user_settings, :cookies, [])
     }
 
-    {:ok, user_config}
+    # Remove nil values
+    credentials = Map.reject(credentials, fn {_k, v} -> is_nil(v) end)
+
+    # Try to get stored session first
+    case CardigannAuth.get_stored_session(definition.id) do
+      {:ok, session} ->
+        # Validate session hasn't expired
+        if CardigannAuth.validate_session(session, parsed) do
+          {:ok, convert_session_to_user_config(session)}
+        else
+          # Session expired, re-authenticate
+          authenticate_and_convert(parsed, credentials, definition.id)
+        end
+
+      {:error, :not_found} ->
+        # No stored session, authenticate if needed
+        authenticate_and_convert(parsed, credentials, definition.id)
+
+      {:error, :expired} ->
+        # Session expired, re-authenticate
+        authenticate_and_convert(parsed, credentials, definition.id)
+    end
+  end
+
+  defp authenticate_and_convert(parsed, credentials, definition_id) do
+    case CardigannAuth.authenticate(parsed, credentials, definition_id) do
+      {:ok, session} ->
+        {:ok, convert_session_to_user_config(session)}
+
+      {:error, error} ->
+        # If authentication is required but failed, return error
+        # Otherwise return empty config for public indexers
+        if parsed.login != nil and credentials != %{} do
+          {:error, error}
+        else
+          {:ok, %{}}
+        end
+    end
+  end
+
+  defp convert_session_to_user_config(session) do
+    case session.method do
+      :api_key ->
+        %{api_key: session.api_key}
+
+      :cookie ->
+        %{cookies: session.cookies}
+
+      :form ->
+        %{cookies: session.cookies}
+
+      :none ->
+        %{}
+    end
   end
 
   defp apply_search_filters(results, opts) do

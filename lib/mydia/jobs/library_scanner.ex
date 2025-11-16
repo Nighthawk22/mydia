@@ -193,41 +193,108 @@ defmodule Mydia.Jobs.LibraryScanner do
     # Detect changes
     changes = Library.Scanner.detect_changes(scan_result, existing_files, library_path)
 
-    # Process changes in a transaction (file operations only, no metadata enrichment)
-    transaction_result =
-      Repo.transaction(fn ->
-        # Add new files (without metadata enrichment)
-        new_media_files =
-          Enum.map(changes.new_files, fn file_info ->
-            # Calculate relative path from library root
-            relative_path = Path.relative_to(file_info.path, library_path.path)
+    # Process files in batches to avoid long-running transactions
+    batch_size = 100
+    total_new_files = length(changes.new_files)
+    total_modified = length(changes.modified_files)
+    total_deleted = length(changes.deleted_files)
 
-            case Library.create_scanned_media_file(%{
-                   library_path_id: library_path.id,
-                   relative_path: relative_path,
-                   size: file_info.size,
-                   verified_at: DateTime.utc_now()
-                 }) do
-              {:ok, media_file} ->
-                Logger.debug("Added new media file",
-                  path: file_info.path,
-                  relative_path: relative_path
-                )
+    Logger.info("Processing library changes in batches",
+      new_files: total_new_files,
+      modified_files: total_modified,
+      deleted_files: total_deleted,
+      batch_size: batch_size
+    )
 
-                {:ok, media_file, file_info}
+    # Process new files in batches
+    new_media_files =
+      changes.new_files
+      |> Enum.chunk_every(batch_size)
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {batch, batch_index} ->
+        batch_num = batch_index + 1
+        total_batches = ceil(total_new_files / batch_size)
 
-              {:error, changeset} ->
-                Logger.error("Failed to create media file",
-                  path: file_info.path,
-                  errors: inspect(changeset.errors)
-                )
+        Logger.debug("Processing new files batch #{batch_num}/#{total_batches}",
+          batch_size: length(batch)
+        )
 
-                {:error, file_info}
-            end
+        # Broadcast progress
+        Phoenix.PubSub.broadcast(
+          Mydia.PubSub,
+          "library_scanner",
+          {:library_scan_progress,
+           %{
+             library_path_id: library_path.id,
+             stage: :creating_files,
+             current: batch_index * batch_size + length(batch),
+             total: total_new_files
+           }}
+        )
+
+        # Process batch in a transaction
+        {:ok, batch_results} =
+          Repo.transaction(fn ->
+            Enum.map(batch, fn file_info ->
+              # Calculate relative path from library root
+              relative_path = Path.relative_to(file_info.path, library_path.path)
+
+              case Library.create_scanned_media_file(%{
+                     library_path_id: library_path.id,
+                     relative_path: relative_path,
+                     size: file_info.size,
+                     verified_at: DateTime.utc_now()
+                   }) do
+                {:ok, media_file} ->
+                  Logger.debug("Added new media file",
+                    path: file_info.path,
+                    relative_path: relative_path
+                  )
+
+                  {:ok, media_file, file_info}
+
+                {:error, changeset} ->
+                  Logger.error("Failed to create media file",
+                    path: file_info.path,
+                    errors: inspect(changeset.errors)
+                  )
+
+                  {:error, file_info}
+              end
+            end)
           end)
 
-        # Update modified files
-        Enum.each(changes.modified_files, fn file_info ->
+        batch_results
+      end)
+
+    # Process modified files in batches
+    changes.modified_files
+    |> Enum.chunk_every(batch_size)
+    |> Enum.with_index()
+    |> Enum.each(fn {batch, batch_index} ->
+      batch_num = batch_index + 1
+      total_batches = ceil(total_modified / batch_size)
+
+      Logger.debug("Processing modified files batch #{batch_num}/#{total_batches}",
+        batch_size: length(batch)
+      )
+
+      # Broadcast progress
+      Phoenix.PubSub.broadcast(
+        Mydia.PubSub,
+        "library_scanner",
+        {:library_scan_progress,
+         %{
+           library_path_id: library_path.id,
+           stage: :updating_files,
+           current: batch_index * batch_size + length(batch),
+           total: total_modified
+         }}
+      )
+
+      # Process batch in a transaction
+      Repo.transaction(fn ->
+        Enum.each(batch, fn file_info ->
           # Calculate relative path to find the file in database
           relative_path = Path.relative_to(file_info.path, library_path.path)
 
@@ -251,9 +318,37 @@ defmodule Mydia.Jobs.LibraryScanner do
               Logger.debug("Updated media file", path: file_info.path)
           end
         end)
+      end)
+    end)
 
-        # Mark deleted files
-        Enum.each(changes.deleted_files, fn media_file ->
+    # Process deleted files in batches
+    changes.deleted_files
+    |> Enum.chunk_every(batch_size)
+    |> Enum.with_index()
+    |> Enum.each(fn {batch, batch_index} ->
+      batch_num = batch_index + 1
+      total_batches = ceil(total_deleted / batch_size)
+
+      Logger.debug("Processing deleted files batch #{batch_num}/#{total_batches}",
+        batch_size: length(batch)
+      )
+
+      # Broadcast progress
+      Phoenix.PubSub.broadcast(
+        Mydia.PubSub,
+        "library_scanner",
+        {:library_scan_progress,
+         %{
+           library_path_id: library_path.id,
+           stage: :deleting_files,
+           current: batch_index * batch_size + length(batch),
+           total: total_deleted
+         }}
+      )
+
+      # Process batch in a transaction
+      Repo.transaction(fn ->
+        Enum.each(batch, fn media_file ->
           {:ok, _} = Library.delete_media_file(media_file)
 
           # Preload library_path association for path resolution
@@ -262,246 +357,270 @@ defmodule Mydia.Jobs.LibraryScanner do
 
           Logger.debug("Deleted media file record", path: absolute_path)
         end)
+      end)
+    end)
 
-        %{changes: changes, scan_result: scan_result, new_media_files: new_media_files}
+    # Prepare result for metadata enrichment
+    result = %{changes: changes, scan_result: scan_result, new_media_files: new_media_files}
+
+    # Get metadata provider config
+    metadata_config = Metadata.default_relay_config()
+
+    # Process metadata enrichment for new files in parallel (outside transaction)
+    # Use Task.async_stream for concurrency with back-pressure
+    total_to_enrich = Enum.count(result.new_media_files, &match?({:ok, _, _}, &1))
+
+    Logger.info("Starting metadata enrichment",
+      total_files: total_to_enrich,
+      max_concurrency: 10
+    )
+
+    enrichment_results =
+      result.new_media_files
+      |> Enum.filter(&match?({:ok, _, _}, &1))
+      |> Stream.with_index()
+      |> Task.async_stream(
+        fn {{:ok, media_file, file_info}, index} ->
+          # Broadcast progress every 10 files
+          if rem(index, 10) == 0 do
+            Phoenix.PubSub.broadcast(
+              Mydia.PubSub,
+              "library_scanner",
+              {:library_scan_progress,
+               %{
+                 library_path_id: library_path.id,
+                 stage: :enriching_metadata,
+                 current: index,
+                 total: total_to_enrich
+               }}
+            )
+          end
+
+          # Try to parse, match, and enrich the file
+          process_result = process_media_file(media_file, file_info, metadata_config)
+          {media_file, process_result}
+        end,
+        max_concurrency: 10,
+        timeout: :infinity,
+        on_timeout: :kill_task
+      )
+      |> Enum.map(fn
+        {:ok, result} ->
+          result
+
+        {:exit, reason} ->
+          Logger.warning("Metadata enrichment task crashed", reason: inspect(reason))
+          nil
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    # Count type mismatches in new files
+    type_mismatch_count =
+      Enum.count(enrichment_results, fn {_file, result} ->
+        result == {:error, :library_type_mismatch}
       end)
 
-    # After transaction commits, enrich new files with metadata (outside transaction)
-    case transaction_result do
-      {:ok, result} ->
-        # Get metadata provider config
-        metadata_config = Metadata.default_relay_config()
+    # Initialize tracking for robust cleanup operations
+    cleanup_stats = %{
+      orphaned_files_fixed: 0,
+      tv_orphans_fixed: 0,
+      associations_updated: 0,
+      invalid_paths_removed: 0,
+      type_mismatches_detected: type_mismatch_count,
+      movies_in_series_libs: 0,
+      tv_in_movies_libs: 0
+    }
 
-        # Process metadata enrichment for new files (outside transaction)
-        # Track results for statistics
-        enrichment_results =
-          Enum.map(result.new_media_files, fn
-            {:ok, media_file, file_info} ->
-              # Try to parse, match, and enrich the file
-              process_result = process_media_file(media_file, file_info, metadata_config)
-              {media_file, process_result}
+    # 1. Re-enrich completely orphaned files (no media_item_id and no episode_id)
+    completely_orphaned =
+      existing_files
+      |> Enum.filter(fn file ->
+        is_nil(file.media_item_id) and is_nil(file.episode_id)
+      end)
 
-            {:error, _file_info} ->
-              nil
-          end)
-          |> Enum.reject(&is_nil/1)
-
-        # Count type mismatches in new files
-        type_mismatch_count =
-          Enum.count(enrichment_results, fn {_file, result} ->
-            result == {:error, :library_type_mismatch}
-          end)
-
-        # Initialize tracking for robust cleanup operations
-        cleanup_stats = %{
-          orphaned_files_fixed: 0,
-          tv_orphans_fixed: 0,
-          associations_updated: 0,
-          invalid_paths_removed: 0,
-          type_mismatches_detected: type_mismatch_count,
-          movies_in_series_libs: 0,
-          tv_in_movies_libs: 0
-        }
-
-        # 1. Re-enrich completely orphaned files (no media_item_id and no episode_id)
-        completely_orphaned =
-          existing_files
-          |> Enum.filter(fn file ->
-            is_nil(file.media_item_id) and is_nil(file.episode_id)
-          end)
-
-        cleanup_stats =
-          if completely_orphaned != [] do
-            Logger.info("Re-enriching completely orphaned files",
-              count: length(completely_orphaned)
-            )
-
-            fixed_count =
-              Enum.count(completely_orphaned, fn media_file ->
-                # Preload library_path association for path resolution
-                media_file = Mydia.Repo.preload(media_file, :library_path)
-                absolute_path = Mydia.Library.MediaFile.absolute_path(media_file)
-
-                file_info =
-                  Enum.find(result.scan_result.files, fn f -> f.path == absolute_path end)
-
-                if file_info do
-                  Logger.debug("Re-enriching orphaned file", path: absolute_path)
-                  process_media_file(media_file, file_info, metadata_config)
-                  true
-                else
-                  false
-                end
-              end)
-
-            Map.put(cleanup_stats, :orphaned_files_fixed, fixed_count)
-          else
-            cleanup_stats
-          end
-
-        # 2. Fix orphaned TV show files (have media_item_id for TV show but no episode_id)
-        # Preload media_item to check type
-        tv_orphaned_files =
-          existing_files
-          |> Repo.preload(:media_item)
-          |> Enum.filter(fn file ->
-            not is_nil(file.media_item_id) and
-              is_nil(file.episode_id) and
-              file.media_item != nil and
-              file.media_item.type == "tv_show"
-          end)
-
-        cleanup_stats =
-          if tv_orphaned_files != [] do
-            Logger.info("Fixing orphaned TV show files", count: length(tv_orphaned_files))
-
-            fixed_count =
-              Enum.count(tv_orphaned_files, fn media_file ->
-                fix_orphaned_tv_file(media_file, metadata_config)
-              end)
-
-            Map.put(cleanup_stats, :tv_orphans_fixed, fixed_count)
-          else
-            cleanup_stats
-          end
-
-        # 3. Re-validate file associations for TV shows
-        # Check if season/episode info changed by re-parsing filenames
-        tv_files_with_episodes =
-          existing_files
-          |> Repo.preload([:media_item, :episode])
-          |> Enum.filter(fn file ->
-            not is_nil(file.episode_id) and file.episode != nil
-          end)
-
-        cleanup_stats =
-          if tv_files_with_episodes != [] do
-            Logger.debug("Re-validating TV file associations",
-              count: length(tv_files_with_episodes)
-            )
-
-            updated_count =
-              Enum.count(tv_files_with_episodes, fn media_file ->
-                revalidate_tv_file_association(media_file)
-              end)
-
-            Map.put(cleanup_stats, :associations_updated, updated_count)
-          else
-            cleanup_stats
-          end
-
-        # 4. Detect existing type mismatches in library
-        # Find movies in series-only libraries
-        movies_in_series_libs =
-          detect_type_mismatches(existing_files, library_path, :movies_in_series)
-
-        # Find TV shows in movies-only libraries
-        tv_in_movies_libs =
-          detect_type_mismatches(existing_files, library_path, :tv_in_movies)
-
-        cleanup_stats =
-          cleanup_stats
-          |> Map.put(:movies_in_series_libs, length(movies_in_series_libs))
-          |> Map.put(:tv_in_movies_libs, length(tv_in_movies_libs))
-
-        # Log detected mismatches
-        if movies_in_series_libs != [] do
-          sample_paths =
-            Enum.take(movies_in_series_libs, 3)
-            |> Enum.map(fn file ->
-              # Preload library_path association for path resolution
-              file = Mydia.Repo.preload(file, :library_path)
-              Mydia.Library.MediaFile.absolute_path(file)
-            end)
-
-          Logger.warning("Detected movies in series-only library",
-            count: length(movies_in_series_libs),
-            library_path: library_path.path,
-            sample_paths: sample_paths
-          )
-        end
-
-        if tv_in_movies_libs != [] do
-          sample_paths =
-            Enum.take(tv_in_movies_libs, 3)
-            |> Enum.map(fn file ->
-              # Preload library_path association for path resolution
-              file = Mydia.Repo.preload(file, :library_path)
-              Mydia.Library.MediaFile.absolute_path(file)
-            end)
-
-          Logger.warning("Detected TV shows in movies-only library",
-            count: length(tv_in_movies_libs),
-            library_path: library_path.path,
-            sample_paths: sample_paths
-          )
-        end
-
-        # 5. Track removed files with invalid paths
-        cleanup_stats =
-          Map.put(cleanup_stats, :invalid_paths_removed, length(result.changes.deleted_files))
-
-        # Log cleanup summary
-        if cleanup_stats.orphaned_files_fixed > 0 or cleanup_stats.tv_orphans_fixed > 0 or
-             cleanup_stats.associations_updated > 0 or cleanup_stats.invalid_paths_removed > 0 or
-             cleanup_stats.type_mismatches_detected > 0 or cleanup_stats.movies_in_series_libs > 0 or
-             cleanup_stats.tv_in_movies_libs > 0 do
-          Logger.info("Cleanup summary",
-            orphaned_files_fixed: cleanup_stats.orphaned_files_fixed,
-            tv_orphans_fixed: cleanup_stats.tv_orphans_fixed,
-            associations_updated: cleanup_stats.associations_updated,
-            invalid_paths_removed: cleanup_stats.invalid_paths_removed,
-            type_mismatches_detected: cleanup_stats.type_mismatches_detected,
-            movies_in_series_libs: cleanup_stats.movies_in_series_libs,
-            tv_in_movies_libs: cleanup_stats.tv_in_movies_libs
-          )
-        end
-
-        {:ok, Map.put(result, :cleanup_stats, cleanup_stats)}
-
-      error ->
-        error
-    end
-    |> case do
-      {:ok, result} ->
-        # Update library path with success status (skip for runtime paths)
-        if updatable_library_path?(library_path) do
-          {:ok, _} =
-            Settings.update_library_path(library_path, %{
-              last_scan_at: DateTime.utc_now(),
-              last_scan_status: :success,
-              last_scan_error: nil
-            })
-        end
-
-        # Broadcast scan completed with cleanup stats
-        cleanup_stats = Map.get(result, :cleanup_stats, %{})
-
-        Phoenix.PubSub.broadcast(
-          Mydia.PubSub,
-          "library_scanner",
-          {:library_scan_completed,
-           %{
-             library_path_id: library_path.id,
-             type: library_path.type,
-             new_files: length(result.changes.new_files),
-             modified_files: length(result.changes.modified_files),
-             deleted_files: length(result.changes.deleted_files),
-             orphaned_files_fixed: Map.get(cleanup_stats, :orphaned_files_fixed, 0),
-             tv_orphans_fixed: Map.get(cleanup_stats, :tv_orphans_fixed, 0),
-             associations_updated: Map.get(cleanup_stats, :associations_updated, 0),
-             invalid_paths_removed: Map.get(cleanup_stats, :invalid_paths_removed, 0),
-             type_mismatches_detected: Map.get(cleanup_stats, :type_mismatches_detected, 0),
-             movies_in_series_libs: Map.get(cleanup_stats, :movies_in_series_libs, 0),
-             tv_in_movies_libs: Map.get(cleanup_stats, :tv_in_movies_libs, 0)
-           }}
+    cleanup_stats =
+      if completely_orphaned != [] do
+        Logger.info("Re-enriching completely orphaned files",
+          count: length(completely_orphaned)
         )
 
-        {:ok, result}
+        fixed_count =
+          Enum.count(completely_orphaned, fn media_file ->
+            # Preload library_path association for path resolution
+            media_file = Mydia.Repo.preload(media_file, :library_path)
+            absolute_path = Mydia.Library.MediaFile.absolute_path(media_file)
 
-      {:error, reason} ->
-        handle_scan_error(library_path, "Transaction failed: #{inspect(reason)}")
+            file_info =
+              Enum.find(result.scan_result.files, fn f -> f.path == absolute_path end)
+
+            if file_info do
+              Logger.debug("Re-enriching orphaned file", path: absolute_path)
+              process_media_file(media_file, file_info, metadata_config)
+              true
+            else
+              false
+            end
+          end)
+
+        Map.put(cleanup_stats, :orphaned_files_fixed, fixed_count)
+      else
+        cleanup_stats
+      end
+
+    # 2. Fix orphaned TV show files (have media_item_id for TV show but no episode_id)
+    # Preload media_item to check type
+    tv_orphaned_files =
+      existing_files
+      |> Repo.preload(:media_item)
+      |> Enum.filter(fn file ->
+        not is_nil(file.media_item_id) and
+          is_nil(file.episode_id) and
+          file.media_item != nil and
+          file.media_item.type == "tv_show"
+      end)
+
+    cleanup_stats =
+      if tv_orphaned_files != [] do
+        Logger.info("Fixing orphaned TV show files", count: length(tv_orphaned_files))
+
+        fixed_count =
+          Enum.count(tv_orphaned_files, fn media_file ->
+            fix_orphaned_tv_file(media_file, metadata_config)
+          end)
+
+        Map.put(cleanup_stats, :tv_orphans_fixed, fixed_count)
+      else
+        cleanup_stats
+      end
+
+    # 3. Re-validate file associations for TV shows
+    # Check if season/episode info changed by re-parsing filenames
+    tv_files_with_episodes =
+      existing_files
+      |> Repo.preload([:media_item, :episode])
+      |> Enum.filter(fn file ->
+        not is_nil(file.episode_id) and file.episode != nil
+      end)
+
+    cleanup_stats =
+      if tv_files_with_episodes != [] do
+        Logger.debug("Re-validating TV file associations",
+          count: length(tv_files_with_episodes)
+        )
+
+        updated_count =
+          Enum.count(tv_files_with_episodes, fn media_file ->
+            revalidate_tv_file_association(media_file)
+          end)
+
+        Map.put(cleanup_stats, :associations_updated, updated_count)
+      else
+        cleanup_stats
+      end
+
+    # 4. Detect existing type mismatches in library
+    # Find movies in series-only libraries
+    movies_in_series_libs =
+      detect_type_mismatches(existing_files, library_path, :movies_in_series)
+
+    # Find TV shows in movies-only libraries
+    tv_in_movies_libs =
+      detect_type_mismatches(existing_files, library_path, :tv_in_movies)
+
+    cleanup_stats =
+      cleanup_stats
+      |> Map.put(:movies_in_series_libs, length(movies_in_series_libs))
+      |> Map.put(:tv_in_movies_libs, length(tv_in_movies_libs))
+
+    # Log detected mismatches
+    if movies_in_series_libs != [] do
+      sample_paths =
+        Enum.take(movies_in_series_libs, 3)
+        |> Enum.map(fn file ->
+          # Preload library_path association for path resolution
+          file = Mydia.Repo.preload(file, :library_path)
+          Mydia.Library.MediaFile.absolute_path(file)
+        end)
+
+      Logger.warning("Detected movies in series-only library",
+        count: length(movies_in_series_libs),
+        library_path: library_path.path,
+        sample_paths: sample_paths
+      )
     end
+
+    if tv_in_movies_libs != [] do
+      sample_paths =
+        Enum.take(tv_in_movies_libs, 3)
+        |> Enum.map(fn file ->
+          # Preload library_path association for path resolution
+          file = Mydia.Repo.preload(file, :library_path)
+          Mydia.Library.MediaFile.absolute_path(file)
+        end)
+
+      Logger.warning("Detected TV shows in movies-only library",
+        count: length(tv_in_movies_libs),
+        library_path: library_path.path,
+        sample_paths: sample_paths
+      )
+    end
+
+    # 5. Track removed files with invalid paths
+    cleanup_stats =
+      Map.put(cleanup_stats, :invalid_paths_removed, length(result.changes.deleted_files))
+
+    # Log cleanup summary
+    if cleanup_stats.orphaned_files_fixed > 0 or cleanup_stats.tv_orphans_fixed > 0 or
+         cleanup_stats.associations_updated > 0 or cleanup_stats.invalid_paths_removed > 0 or
+         cleanup_stats.type_mismatches_detected > 0 or cleanup_stats.movies_in_series_libs > 0 or
+         cleanup_stats.tv_in_movies_libs > 0 do
+      Logger.info("Cleanup summary",
+        orphaned_files_fixed: cleanup_stats.orphaned_files_fixed,
+        tv_orphans_fixed: cleanup_stats.tv_orphans_fixed,
+        associations_updated: cleanup_stats.associations_updated,
+        invalid_paths_removed: cleanup_stats.invalid_paths_removed,
+        type_mismatches_detected: cleanup_stats.type_mismatches_detected,
+        movies_in_series_libs: cleanup_stats.movies_in_series_libs,
+        tv_in_movies_libs: cleanup_stats.tv_in_movies_libs
+      )
+    end
+
+    result = Map.put(result, :cleanup_stats, cleanup_stats)
+
+    # Update library path with success status (skip for runtime paths)
+    if updatable_library_path?(library_path) do
+      {:ok, _} =
+        Settings.update_library_path(library_path, %{
+          last_scan_at: DateTime.utc_now(),
+          last_scan_status: :success,
+          last_scan_error: nil
+        })
+    end
+
+    # Broadcast scan completed with cleanup stats
+    cleanup_stats = Map.get(result, :cleanup_stats, %{})
+
+    Phoenix.PubSub.broadcast(
+      Mydia.PubSub,
+      "library_scanner",
+      {:library_scan_completed,
+       %{
+         library_path_id: library_path.id,
+         type: library_path.type,
+         new_files: length(result.changes.new_files),
+         modified_files: length(result.changes.modified_files),
+         deleted_files: length(result.changes.deleted_files),
+         orphaned_files_fixed: Map.get(cleanup_stats, :orphaned_files_fixed, 0),
+         tv_orphans_fixed: Map.get(cleanup_stats, :tv_orphans_fixed, 0),
+         associations_updated: Map.get(cleanup_stats, :associations_updated, 0),
+         invalid_paths_removed: Map.get(cleanup_stats, :invalid_paths_removed, 0),
+         type_mismatches_detected: Map.get(cleanup_stats, :type_mismatches_detected, 0),
+         movies_in_series_libs: Map.get(cleanup_stats, :movies_in_series_libs, 0),
+         tv_in_movies_libs: Map.get(cleanup_stats, :tv_in_movies_libs, 0)
+       }}
+    )
+
+    {:ok, result}
   rescue
     error ->
       error_message = Exception.format(:error, error, __STACKTRACE__)

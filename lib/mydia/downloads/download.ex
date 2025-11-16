@@ -18,6 +18,12 @@ defmodule Mydia.Downloads.Download do
     field :error_message, :string
     field :metadata, :map
 
+    # Import retry tracking fields
+    field :import_retry_count, :integer, default: 0
+    field :import_last_error, :string
+    field :import_next_retry_at, :utc_datetime
+    field :import_failed_at, :utc_datetime
+
     belongs_to :media_item, Mydia.Media.MediaItem
     belongs_to :episode, Mydia.Media.Episode
 
@@ -39,7 +45,11 @@ defmodule Mydia.Downloads.Download do
       :download_client_id,
       :completed_at,
       :error_message,
-      :metadata
+      :metadata,
+      :import_retry_count,
+      :import_last_error,
+      :import_next_retry_at,
+      :import_failed_at
     ])
     |> validate_required([:title])
     |> foreign_key_constraint(:media_item_id)

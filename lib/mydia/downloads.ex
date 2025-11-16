@@ -884,7 +884,10 @@ defmodule Mydia.Downloads do
   end
 
   defp apply_status_filters(downloads, :failed) do
-    Enum.filter(downloads, &(&1.status in ["failed", "missing"]))
+    Enum.filter(downloads, fn d ->
+      # Show downloads that failed in the client OR have import failures
+      d.status in ["failed", "missing"] || not is_nil(d.import_failed_at)
+    end)
   end
 
   defp find_client_config(client_name) do

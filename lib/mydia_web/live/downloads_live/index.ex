@@ -185,6 +185,42 @@ defmodule MydiaWeb.DownloadsLive.Index do
     end
   end
 
+  def handle_event("retry_import", %{"id" => id}, socket) do
+    with :ok <- Authorization.authorize_manage_downloads(socket) do
+      download = Downloads.get_download!(id, preload: [:media_item, :episode])
+
+      # Clear retry metadata and trigger immediate import
+      case Downloads.update_download(download, %{
+             import_retry_count: 0,
+             import_last_error: nil,
+             import_next_retry_at: nil,
+             import_failed_at: nil
+           }) do
+        {:ok, updated} ->
+          # Enqueue import job with immediate execution
+          %{
+            "download_id" => updated.id,
+            "save_path" => nil,
+            "cleanup_client" => true,
+            "use_hardlinks" => true,
+            "move_files" => false
+          }
+          |> Mydia.Jobs.MediaImport.new()
+          |> Oban.insert()
+
+          {:noreply,
+           socket
+           |> put_flash(:info, "Import retry initiated")
+           |> load_downloads()}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Failed to retry import")}
+      end
+    else
+      {:unauthorized, socket} -> {:noreply, socket}
+    end
+  end
+
   def handle_event("delete_download", %{"id" => id}, socket) do
     with :ok <- Authorization.authorize_manage_downloads(socket) do
       download = Downloads.get_download!(id)
@@ -216,27 +252,52 @@ defmodule MydiaWeb.DownloadsLive.Index do
         try do
           download = Downloads.get_download!(id, preload: [:media_item, :episode])
 
-          # Convert metadata to struct for type-safe access
-          metadata = DownloadMetadata.from_map(download.metadata)
+          # Check if this is an import failure or download failure
+          if download.import_last_error do
+            # Import failure - retry import
+            case Downloads.update_download(download, %{
+                   import_retry_count: 0,
+                   import_last_error: nil,
+                   import_next_retry_at: nil,
+                   import_failed_at: nil
+                 }) do
+              {:ok, updated} ->
+                %{
+                  "download_id" => updated.id,
+                  "save_path" => nil,
+                  "cleanup_client" => true,
+                  "use_hardlinks" => true,
+                  "move_files" => false
+                }
+                |> Mydia.Jobs.MediaImport.new()
+                |> Oban.insert()
 
-          search_result = %Mydia.Indexers.SearchResult{
-            download_url: download.download_url,
-            title: download.title,
-            indexer: download.indexer,
-            size: metadata.size,
-            seeders: metadata.seeders,
-            leechers: metadata.leechers,
-            quality: metadata.quality
-          }
+              error ->
+                error
+            end
+          else
+            # Download failure - retry download
+            metadata = DownloadMetadata.from_map(download.metadata)
 
-          opts =
-            []
-            |> maybe_add_opt(:media_item_id, download.media_item_id)
-            |> maybe_add_opt(:episode_id, download.episode_id)
-            |> maybe_add_opt(:client_name, download.download_client)
+            search_result = %Mydia.Indexers.SearchResult{
+              download_url: download.download_url,
+              title: download.title,
+              indexer: download.indexer,
+              size: metadata.size,
+              seeders: metadata.seeders,
+              leechers: metadata.leechers,
+              quality: metadata.quality
+            }
 
-          Downloads.delete_download(download)
-          Downloads.initiate_download(search_result, opts)
+            opts =
+              []
+              |> maybe_add_opt(:media_item_id, download.media_item_id)
+              |> maybe_add_opt(:episode_id, download.episode_id)
+              |> maybe_add_opt(:client_name, download.download_client)
+
+            Downloads.delete_download(download)
+            Downloads.initiate_download(search_result, opts)
+          end
         rescue
           _ -> {:error, :failed}
         end
@@ -248,7 +309,7 @@ defmodule MydiaWeb.DownloadsLive.Index do
      socket
      |> assign(:selected_ids, MapSet.new())
      |> assign(:selection_mode, false)
-     |> put_flash(:info, "#{success_count} download(s) re-initiated")
+     |> put_flash(:info, "#{success_count} item(s) retried")
      |> load_downloads()}
   end
 
@@ -569,6 +630,21 @@ defmodule MydiaWeb.DownloadsLive.Index do
       "movie" -> {"🎬", "Movie", "badge-accent"}
       "tv_show" -> {"📺", "TV Show", "badge-info"}
       _ -> nil
+    end
+  end
+
+  defp format_next_retry(nil), do: "—"
+
+  defp format_next_retry(%DateTime{} = dt) do
+    now = DateTime.utc_now()
+    diff = DateTime.diff(dt, now, :second)
+
+    cond do
+      diff < 0 -> "Retrying soon..."
+      diff < 60 -> "in #{diff}s"
+      diff < 3600 -> "in #{div(diff, 60)}m"
+      diff < 86400 -> "in #{div(diff, 3600)}h"
+      true -> "in #{div(diff, 86400)}d"
     end
   end
 end

@@ -19,7 +19,7 @@ defmodule Mydia.Jobs.MediaImport do
 
   use Oban.Worker,
     queue: :default,
-    max_attempts: 3
+    max_attempts: 1000
 
   require Logger
   alias Mydia.{Downloads, Library, Media, Settings}
@@ -28,9 +28,16 @@ defmodule Mydia.Jobs.MediaImport do
   alias Mydia.Library.FileParser.V2, as: FileParser
   alias Mydia.Indexers.QualityParser
 
+  # Exponential backoff schedule in seconds
+  # 1 min, 5 min, 15 min, 1 hour, 4 hours, 12 hours, 24 hours, then 24 hours indefinitely
+  @backoff_schedule [60, 300, 900, 3600, 14_400, 43_200, 86_400]
+
   @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"download_id" => download_id} = args}) do
-    Logger.info("Starting media import", download_id: download_id)
+  def perform(%Oban.Job{args: %{"download_id" => download_id} = args, attempt: attempt}) do
+    Logger.info("Starting media import",
+      download_id: download_id,
+      attempt: attempt
+    )
 
     download = Downloads.get_download!(download_id, preload: [:media_item, :episode])
 
@@ -42,8 +49,32 @@ defmodule Mydia.Jobs.MediaImport do
 
       {:ok, :skipped}
     else
-      import_download(download, args)
+      case import_download(download, args) do
+        {:ok, result} ->
+          # Success - clear any retry metadata
+          clear_retry_metadata(download)
+          {:ok, result}
+
+        {:error, reason} = error ->
+          # Failure - update retry metadata and schedule next retry
+          handle_import_failure(download, reason, attempt)
+          error
+      end
     end
+  end
+
+  @impl Oban.Worker
+  def backoff(%Oban.Job{attempt: attempt}) do
+    # Calculate backoff time based on attempt number
+    backoff_seconds = calculate_backoff(attempt)
+
+    Logger.info("Scheduling import retry",
+      attempt: attempt,
+      backoff_seconds: backoff_seconds,
+      next_retry: DateTime.add(DateTime.utc_now(), backoff_seconds, :second)
+    )
+
+    backoff_seconds
   end
 
   ## Private Functions
@@ -890,5 +921,101 @@ defmodule Mydia.Jobs.MediaImport do
       "#{field}: #{message}"
     end)
     |> Enum.join(", ")
+  end
+
+  # Calculate exponential backoff based on attempt number
+  defp calculate_backoff(attempt) do
+    # Attempt is 1-indexed, but we want 0-indexed for the schedule
+    index = attempt - 1
+
+    cond do
+      # For attempts within our schedule, use the configured value
+      index < length(@backoff_schedule) ->
+        Enum.at(@backoff_schedule, index)
+
+      # For attempts beyond our schedule, use the last value (24 hours)
+      true ->
+        List.last(@backoff_schedule)
+    end
+  end
+
+  # Update download record with retry metadata after a failed attempt
+  defp handle_import_failure(download, reason, attempt) do
+    backoff_seconds = calculate_backoff(attempt)
+    next_retry_at = DateTime.add(DateTime.utc_now(), backoff_seconds, :second)
+
+    # Format error message for storage
+    error_message =
+      case reason do
+        atom when is_atom(atom) ->
+          atom |> Atom.to_string() |> String.replace("_", " ") |> String.capitalize()
+
+        binary when is_binary(binary) ->
+          binary
+
+        other ->
+          inspect(other)
+      end
+
+    # Track first failure timestamp
+    import_failed_at = download.import_failed_at || DateTime.utc_now()
+
+    attrs = %{
+      import_retry_count: attempt,
+      import_last_error: error_message,
+      import_next_retry_at: next_retry_at,
+      import_failed_at: import_failed_at
+    }
+
+    case Downloads.update_download(download, attrs) do
+      {:ok, _updated} ->
+        Logger.warning("Import failed, will retry",
+          download_id: download.id,
+          attempt: attempt,
+          reason: error_message,
+          next_retry_at: next_retry_at,
+          backoff_seconds: backoff_seconds
+        )
+
+        :ok
+
+      {:error, changeset} ->
+        Logger.error("Failed to update retry metadata",
+          download_id: download.id,
+          errors: inspect(changeset.errors)
+        )
+
+        :ok
+    end
+  end
+
+  # Clear retry metadata after successful import
+  defp clear_retry_metadata(download) do
+    # Only clear if there was a previous failure
+    if download.import_failed_at do
+      attrs = %{
+        import_retry_count: 0,
+        import_last_error: nil,
+        import_next_retry_at: nil,
+        import_failed_at: nil
+      }
+
+      case Downloads.update_download(download, attrs) do
+        {:ok, _updated} ->
+          Logger.info("Import succeeded after #{download.import_retry_count} retries",
+            download_id: download.id
+          )
+
+          :ok
+
+        {:error, changeset} ->
+          Logger.warning("Failed to clear retry metadata",
+            download_id: download.id,
+            errors: inspect(changeset.errors)
+          )
+
+          :ok
+      end
+    end
   end
 end

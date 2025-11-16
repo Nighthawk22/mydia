@@ -178,8 +178,25 @@
                 <span>{get_metadata_value(download, "seeders")} seeds</span>
               <% end %>
             <% end %>
-            <%= if @active_tab == :issues && download.error_message do %>
-              <span class="text-error">⚠ {download.error_message}</span>
+            <%= if @active_tab == :issues do %>
+              <%= cond do %>
+                <% download.import_last_error -> %>
+                  <span class="text-error">
+                    ⚠ Import failed: {download.import_last_error}
+                  </span>
+                  <span>•</span>
+                  <span>Attempt #{download.import_retry_count}</span>
+                  <%= if download.import_next_retry_at do %>
+                    <span>•</span>
+                    <span>
+                      Next retry: {format_next_retry(download.import_next_retry_at)}
+                    </span>
+                  <% end %>
+                <% download.error_message -> %>
+                  <span class="text-error">⚠ Download failed: {download.error_message}</span>
+                <% true -> %>
+                  <span class="text-error">⚠ Unknown error</span>
+              <% end %>
             <% end %>
           </div>
           <%!-- Progress bar (Queue tab only) --%>
@@ -231,22 +248,36 @@
               </div>
             <% @active_tab == :issues -> %>
               <div class="flex gap-1">
-                <button
-                  type="button"
-                  class="btn btn-square btn-ghost btn-sm"
-                  phx-click="retry_download"
-                  phx-value-id={download.id}
-                  title="Retry download"
-                >
-                  <.icon name="hero-arrow-path" class="size-4" />
-                </button>
+                <%= if download.import_last_error do %>
+                  <%!-- Import failure - retry import --%>
+                  <button
+                    type="button"
+                    class="btn btn-square btn-ghost btn-sm"
+                    phx-click="retry_import"
+                    phx-value-id={download.id}
+                    title="Retry import now"
+                  >
+                    <.icon name="hero-arrow-path" class="size-4" />
+                  </button>
+                <% else %>
+                  <%!-- Download failure - retry download --%>
+                  <button
+                    type="button"
+                    class="btn btn-square btn-ghost btn-sm"
+                    phx-click="retry_download"
+                    phx-value-id={download.id}
+                    title="Retry download"
+                  >
+                    <.icon name="hero-arrow-path" class="size-4" />
+                  </button>
+                <% end %>
                 <button
                   type="button"
                   class="btn btn-square btn-ghost btn-sm"
                   phx-click="delete_download"
                   phx-value-id={download.id}
                   data-confirm="Remove this download?"
-                  title="Remove download"
+                  title="Dismiss and remove"
                 >
                   <.icon name="hero-trash" class="size-4" />
                 </button>

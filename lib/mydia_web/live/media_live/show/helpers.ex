@@ -7,6 +7,7 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
   alias Mydia.Media
   alias Mydia.Media.EpisodeStatus
   alias Mydia.Library
+  alias Mydia.Metadata.Structs.MediaMetadata
 
   require Logger
 
@@ -29,7 +30,7 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
 
   def get_poster_url(media_item) do
     case media_item.metadata do
-      %{"poster_path" => path} when is_binary(path) ->
+      %MediaMetadata{poster_path: path} when is_binary(path) ->
         "https://image.tmdb.org/t/p/w500#{path}"
 
       _ ->
@@ -39,7 +40,7 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
 
   def get_backdrop_url(media_item) do
     case media_item.metadata do
-      %{"backdrop_path" => path} when is_binary(path) ->
+      %MediaMetadata{backdrop_path: path} when is_binary(path) ->
         "https://image.tmdb.org/t/p/original#{path}"
 
       _ ->
@@ -49,7 +50,7 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
 
   def get_overview(media_item) do
     case media_item.metadata do
-      %{"overview" => overview} when is_binary(overview) and overview != "" ->
+      %MediaMetadata{overview: overview} when is_binary(overview) and overview != "" ->
         overview
 
       _ ->
@@ -59,7 +60,7 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
 
   def get_rating(media_item) do
     case media_item.metadata do
-      %{"vote_average" => rating} when is_number(rating) ->
+      %MediaMetadata{vote_average: rating} when is_number(rating) ->
         Float.round(rating, 1)
 
       _ ->
@@ -69,7 +70,7 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
 
   def get_runtime(media_item) do
     case media_item.metadata do
-      %{"runtime" => runtime} when is_integer(runtime) and runtime > 0 ->
+      %MediaMetadata{runtime: runtime} when is_integer(runtime) and runtime > 0 ->
         hours = div(runtime, 60)
         minutes = rem(runtime, 60)
 
@@ -86,7 +87,7 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
 
   def get_genres(media_item) do
     case media_item.metadata do
-      %{"genres" => genres} when is_list(genres) ->
+      %MediaMetadata{genres: genres} when is_list(genres) ->
         Enum.map(genres, fn
           %{"name" => name} -> name
           name when is_binary(name) -> name
@@ -101,14 +102,14 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
 
   def get_cast(media_item, limit \\ 6) do
     case media_item.metadata do
-      %{"credits" => %{"cast" => cast}} when is_list(cast) ->
+      %MediaMetadata{cast: cast} when is_list(cast) ->
         cast
         |> Enum.take(limit)
         |> Enum.map(fn actor ->
           %{
-            name: actor["name"],
-            character: actor["character"],
-            profile_path: actor["profile_path"]
+            name: actor.name,
+            character: actor.character,
+            profile_path: actor.profile_path
           }
         end)
 
@@ -119,16 +120,16 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
 
   def get_crew(media_item) do
     case media_item.metadata do
-      %{"credits" => %{"crew" => crew}} when is_list(crew) ->
+      %MediaMetadata{crew: crew} when is_list(crew) ->
         # Get key crew members (directors, writers, producers)
         crew
         |> Enum.filter(fn member ->
-          member["job"] in ["Director", "Writer", "Screenplay", "Executive Producer", "Producer"]
+          member.job in ["Director", "Writer", "Screenplay", "Executive Producer", "Producer"]
         end)
-        |> Enum.uniq_by(fn member -> {member["name"], member["job"]} end)
+        |> Enum.uniq_by(fn member -> {member.name, member.job} end)
         |> Enum.take(6)
         |> Enum.map(fn member ->
-          %{name: member["name"], job: member["job"]}
+          %{name: member.name, job: member.job}
         end)
 
       _ ->

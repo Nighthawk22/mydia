@@ -643,7 +643,7 @@ defmodule MydiaWeb.MediaLive.Index do
 
   defp get_rating(media_item) do
     case media_item.metadata do
-      %{"vote_average" => rating} when is_number(rating) -> rating
+      %MediaMetadata{vote_average: rating} when is_number(rating) -> rating
       _ -> 0
     end
   end
@@ -693,7 +693,7 @@ defmodule MydiaWeb.MediaLive.Index do
 
   defp get_poster_url(media_item) do
     case media_item.metadata do
-      %{"poster_path" => path} when is_binary(path) ->
+      %MediaMetadata{poster_path: path} when is_binary(path) ->
         "https://image.tmdb.org/t/p/w500#{path}"
 
       _ ->

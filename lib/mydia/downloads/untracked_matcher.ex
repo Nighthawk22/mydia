@@ -202,7 +202,7 @@ defmodule Mydia.Downloads.UntrackedMatcher do
     |> Enum.filter(& &1.enabled)
   end
 
-  defp get_adapter_module(:qbittorrent), do: Mydia.Downloads.Client.Qbittorrent
+  defp get_adapter_module(:qbittorrent), do: Mydia.Downloads.Client.QBittorrent
   defp get_adapter_module(:transmission), do: Mydia.Downloads.Client.Transmission
   defp get_adapter_module(_), do: nil
 

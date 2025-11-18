@@ -1,7 +1,7 @@
-defmodule Mydia.Downloads.Client.QbittorrentTest do
+defmodule Mydia.Downloads.Client.QBittorrentTest do
   use ExUnit.Case, async: true
 
-  alias Mydia.Downloads.Client.Qbittorrent
+  alias Mydia.Downloads.Client.QBittorrent
 
   @config %{
     type: :qbittorrent,
@@ -16,7 +16,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
   describe "module behaviour" do
     test "implements all callbacks from Mydia.Downloads.Client behaviour" do
       # Verify the module implements the required behaviour
-      behaviours = Qbittorrent.__info__(:attributes)[:behaviour] || []
+      behaviours = QBittorrent.__info__(:attributes)[:behaviour] || []
       assert Mydia.Downloads.Client in behaviours
     end
   end
@@ -25,7 +25,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
     test "test_connection requires username and password" do
       config_without_username = Map.delete(@config, :username)
 
-      {:error, error} = Qbittorrent.test_connection(config_without_username)
+      {:error, error} = QBittorrent.test_connection(config_without_username)
       assert error.type == :invalid_config
       assert error.message =~ "Username and password are required"
     end
@@ -34,7 +34,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
       unreachable_config = %{@config | host: "nonexistent.invalid", port: 9999}
       timeout_config = put_in(unreachable_config, [:options, :connect_timeout], 100)
 
-      {:error, error} = Qbittorrent.test_connection(timeout_config)
+      {:error, error} = QBittorrent.test_connection(timeout_config)
       assert error.type in [:connection_failed, :network_error, :timeout]
     end
   end
@@ -46,7 +46,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
 
       magnet = "magnet:?xt=urn:btih:ABC123DEF456789012345678901234567890ABCD&dn=test"
 
-      {:error, error} = Qbittorrent.add_torrent(timeout_config, {:magnet, magnet})
+      {:error, error} = QBittorrent.add_torrent(timeout_config, {:magnet, magnet})
       assert error.type in [:connection_failed, :network_error, :timeout, :invalid_config]
     end
 
@@ -55,7 +55,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
 
       magnet = "magnet:?xt=urn:btih:ABC123DEF456789012345678901234567890ABCD&dn=test"
 
-      {:error, error} = Qbittorrent.add_torrent(invalid_config, {:magnet, magnet})
+      {:error, error} = QBittorrent.add_torrent(invalid_config, {:magnet, magnet})
       assert error.type in [:authentication_failed, :connection_failed, :network_error]
     end
   end
@@ -65,7 +65,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
       unreachable_config = %{@config | host: "nonexistent.invalid", port: 9999}
       timeout_config = put_in(unreachable_config, [:options, :connect_timeout], 100)
 
-      {:error, error} = Qbittorrent.get_status(timeout_config, "somehash")
+      {:error, error} = QBittorrent.get_status(timeout_config, "somehash")
       assert error.type in [:connection_failed, :network_error, :timeout, :invalid_config]
     end
   end
@@ -75,7 +75,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
       unreachable_config = %{@config | host: "nonexistent.invalid", port: 9999}
       timeout_config = put_in(unreachable_config, [:options, :connect_timeout], 100)
 
-      {:error, error} = Qbittorrent.list_torrents(timeout_config)
+      {:error, error} = QBittorrent.list_torrents(timeout_config)
       assert error.type in [:connection_failed, :network_error, :timeout, :invalid_config]
     end
 
@@ -85,9 +85,9 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
       unreachable_config = %{@config | host: "nonexistent.invalid", port: 9999}
       timeout_config = put_in(unreachable_config, [:options, :connect_timeout], 100)
 
-      {:error, _error} = Qbittorrent.list_torrents(timeout_config, filter: :downloading)
-      {:error, _error} = Qbittorrent.list_torrents(timeout_config, category: "test")
-      {:error, _error} = Qbittorrent.list_torrents(timeout_config, tag: "test")
+      {:error, _error} = QBittorrent.list_torrents(timeout_config, filter: :downloading)
+      {:error, _error} = QBittorrent.list_torrents(timeout_config, category: "test")
+      {:error, _error} = QBittorrent.list_torrents(timeout_config, tag: "test")
       assert true
     end
   end
@@ -97,7 +97,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
       unreachable_config = %{@config | host: "nonexistent.invalid", port: 9999}
       timeout_config = put_in(unreachable_config, [:options, :connect_timeout], 100)
 
-      {:error, error} = Qbittorrent.remove_torrent(timeout_config, "somehash")
+      {:error, error} = QBittorrent.remove_torrent(timeout_config, "somehash")
       assert error.type in [:connection_failed, :network_error, :timeout, :invalid_config]
     end
 
@@ -107,10 +107,10 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
       timeout_config = put_in(unreachable_config, [:options, :connect_timeout], 100)
 
       {:error, _error} =
-        Qbittorrent.remove_torrent(timeout_config, "somehash", delete_files: true)
+        QBittorrent.remove_torrent(timeout_config, "somehash", delete_files: true)
 
       {:error, _error} =
-        Qbittorrent.remove_torrent(timeout_config, "somehash", delete_files: false)
+        QBittorrent.remove_torrent(timeout_config, "somehash", delete_files: false)
 
       assert true
     end
@@ -121,7 +121,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
       unreachable_config = %{@config | host: "nonexistent.invalid", port: 9999}
       timeout_config = put_in(unreachable_config, [:options, :connect_timeout], 100)
 
-      {:error, error} = Qbittorrent.pause_torrent(timeout_config, "somehash")
+      {:error, error} = QBittorrent.pause_torrent(timeout_config, "somehash")
       assert error.type in [:connection_failed, :network_error, :timeout, :invalid_config]
     end
   end
@@ -131,7 +131,7 @@ defmodule Mydia.Downloads.Client.QbittorrentTest do
       unreachable_config = %{@config | host: "nonexistent.invalid", port: 9999}
       timeout_config = put_in(unreachable_config, [:options, :connect_timeout], 100)
 
-      {:error, error} = Qbittorrent.resume_torrent(timeout_config, "somehash")
+      {:error, error} = QBittorrent.resume_torrent(timeout_config, "somehash")
       assert error.type in [:connection_failed, :network_error, :timeout, :invalid_config]
     end
   end

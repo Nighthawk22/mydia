@@ -1,4 +1,4 @@
-defmodule Mydia.Downloads.Client.Qbittorrent do
+defmodule Mydia.Downloads.Client.QBittorrent do
   @moduledoc """
   qBittorrent download client adapter.
 

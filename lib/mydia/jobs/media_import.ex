@@ -882,7 +882,7 @@ defmodule Mydia.Jobs.MediaImport do
     end
   end
 
-  defp get_adapter_module(:qbittorrent), do: Mydia.Downloads.Client.Qbittorrent
+  defp get_adapter_module(:qbittorrent), do: Mydia.Downloads.Client.QBittorrent
   defp get_adapter_module(:transmission), do: Mydia.Downloads.Client.Transmission
   defp get_adapter_module(:http), do: Mydia.Downloads.Client.HTTP
   defp get_adapter_module(_), do: nil

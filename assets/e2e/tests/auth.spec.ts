@@ -240,3 +240,81 @@ test.describe('Navigation Flow', () => {
     await expect(page).toHaveURL('/calendar');
   });
 });
+
+test.describe('Auto-Promotion', () => {
+  test.skip('first OIDC user is auto-promoted to admin', async ({ page, context }) => {
+    // This test requires a clean database with no existing users
+    // and proper OIDC configuration. Currently skipped as it needs:
+    // 1. Database reset API endpoint
+    // 2. Working mock-oauth2-server integration
+    // 3. User role verification endpoint or UI element
+
+    // Clear all cookies to ensure fresh session
+    await context.clearCookies();
+
+    // Attempt OIDC login as first user
+    await mockOIDCLogin(page, 'first-user@example.com', 'First User');
+
+    // Should redirect to dashboard after successful authentication
+    await expect(page).toHaveURL('/');
+
+    // First user should be auto-promoted to admin
+    // Navigate to admin page to verify admin access
+    await page.goto('/admin');
+    await expect(page).toHaveURL(/\/admin/);
+
+    // Should see admin content (not redirected)
+    await expect(page.locator('body')).not.toContainText('Access Denied');
+  });
+
+  test.skip('subsequent OIDC users get default role', async ({ page, context }) => {
+    // This test requires:
+    // 1. At least one existing user in the database
+    // 2. Working mock-oauth2-server integration
+    // 3. User role verification
+
+    // Ensure we have a clean session
+    await context.clearCookies();
+
+    // Login as a second OIDC user
+    await mockOIDCLogin(page, 'second-user@example.com', 'Second User');
+
+    // Should redirect to dashboard
+    await expect(page).toHaveURL('/');
+
+    // Second user should NOT have admin access
+    await page.goto('/admin');
+
+    // Should be redirected away from admin page or see access denied
+    await page.waitForTimeout(1000);
+    const currentUrl = page.url();
+    const hasAccessDenied = await page.locator('body').textContent();
+
+    expect(
+      !currentUrl.includes('/admin') || hasAccessDenied?.includes('Access Denied')
+    ).toBeTruthy();
+  });
+
+  test('local auth users maintain their assigned roles', async ({ page }) => {
+    // Login as admin user
+    await loginAsAdmin(page);
+    await expect(page).toHaveURL('/');
+
+    // Verify admin can access admin pages
+    await page.goto('/admin');
+    await expect(page).toHaveURL(/\/admin/);
+
+    // Logout
+    await page.goto('/auth/logout');
+    await expect(page).toHaveURL(/\/auth\/(local\/)?login/);
+
+    // Login as regular user
+    await loginAsUser(page);
+    await expect(page).toHaveURL('/');
+
+    // Verify regular user cannot access admin pages
+    await page.goto('/admin');
+    await page.waitForTimeout(1000);
+    await expect(page).not.toHaveURL('/admin');
+  });
+});

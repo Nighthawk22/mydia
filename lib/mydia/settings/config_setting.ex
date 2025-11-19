@@ -73,5 +73,6 @@ defmodule Mydia.Settings.ConfigSetting do
     |> validate_required([:key, :category])
     |> validate_inclusion(:category, @categories)
     |> unique_constraint(:key)
+    |> foreign_key_constraint(:updated_by_id)
   end
 end

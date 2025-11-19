@@ -51,7 +51,7 @@ defmodule MydiaWeb.AdminConfigLive.Index do
         changeset =
           validate_config_setting(%{
             key: key,
-            value: value,
+            value: to_string(value),
             category: category_atom
           })
 
@@ -104,17 +104,31 @@ defmodule MydiaWeb.AdminConfigLive.Index do
   @impl true
   def handle_event(
         "toggle_setting",
-        %{"key" => key, "value" => value, "category" => category},
+        %{"key" => key, "category" => category} = params,
         socket
       ) do
     # Convert category string to atom for schema compatibility
     category_atom = category_string_to_atom(category)
 
+    # Get the new value, either from params or by looking up current value and toggling it
+    new_value =
+      case Map.get(params, "value") do
+        nil ->
+          # Value not provided (Phoenix drops false values), look up current setting
+          case Settings.get_config_setting_by_key(key) do
+            nil -> "true"
+            setting -> to_string(!parse_boolean_value(setting.value))
+          end
+
+        value ->
+          to_string(value)
+      end
+
     # Handle boolean toggle with validation
     changeset =
       validate_config_setting(%{
         key: key,
-        value: to_string(value),
+        value: new_value,
         category: category_atom
       })
 
@@ -1218,6 +1232,9 @@ defmodule MydiaWeb.AdminConfigLive.Index do
   end
 
   defp validate_config_setting(attrs) do
+    require Logger
+    Logger.debug("validate_config_setting called with attrs: #{inspect(attrs)}")
+
     types = %{
       key: :string,
       value: :string
@@ -1229,11 +1246,34 @@ defmodule MydiaWeb.AdminConfigLive.Index do
       {%{}, types}
       |> Ecto.Changeset.cast(attrs, Map.keys(types))
 
-    # Manually add category to changes since it's already an atom
-    changeset = %{changeset | changes: Map.put(changeset.changes, :category, attrs.category)}
+    Logger.debug("After cast, changeset.changes: #{inspect(changeset.changes)}")
 
-    changeset
-    |> Ecto.Changeset.validate_required([:key, :value, :category])
+    # Manually add category to changes since it's already an atom
+    # Only add if category exists and is not nil
+    changeset =
+      case Map.get(attrs, :category) do
+        nil ->
+          Logger.error("Category is nil in attrs!")
+          changeset
+
+        category ->
+          Logger.debug("Adding category to changes: #{inspect(category)}")
+          %{changeset | changes: Map.put(changeset.changes, :category, category)}
+      end
+
+    Logger.debug("Final changeset.changes before validation: #{inspect(changeset.changes)}")
+
+    # Only require key and category to match ConfigSetting schema validation
+    # Value is optional and can be nil/empty for some settings
+    result =
+      changeset
+      |> Ecto.Changeset.validate_required([:key, :category])
+
+    Logger.debug(
+      "Validation result - valid?: #{result.valid?}, errors: #{inspect(result.errors)}"
+    )
+
+    result
   end
 
   defp category_string_to_atom(category_string) do

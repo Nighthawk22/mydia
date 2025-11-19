@@ -152,7 +152,7 @@
                 <% end %>
               <% end %>
 
-              <form phx-change="update_setting_form" id={"settings-form-#{category}"}>
+              <form id={"settings-form-#{category}"}>
                 <input type="hidden" name="category" value={category} />
                 <div class="space-y-4">
                   <%= for setting <- settings do %>
@@ -194,7 +194,7 @@
                                 value="true"
                                 phx-click="toggle_setting"
                                 phx-value-key={setting.key}
-                                phx-value-value={!setting.value}
+                                phx-value-value={to_string(!setting.value)}
                                 phx-value-category={category}
                               />
                             <% end %>

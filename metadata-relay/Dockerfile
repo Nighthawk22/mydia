@@ -17,6 +17,7 @@ RUN mix deps.compile
 # Copy application files
 COPY config ./config
 COPY lib ./lib
+COPY priv ./priv
 
 # Compile the application
 RUN MIX_ENV=prod mix compile

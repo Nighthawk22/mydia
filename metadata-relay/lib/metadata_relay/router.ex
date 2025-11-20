@@ -396,6 +396,17 @@ defmodule MetadataRelay.Router do
         |> put_resp_content_type("application/json")
         |> send_resp(200, Jason.encode!(body))
 
+      {:error, :not_configured} ->
+        error_response = %{
+          error: "Service not configured",
+          message:
+            "OpenSubtitles integration is not configured. Please set OPENSUBTITLES_API_KEY, OPENSUBTITLES_USERNAME, and OPENSUBTITLES_PASSWORD environment variables."
+        }
+
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(503, Jason.encode!(error_response))
+
       {:error, {:rate_limited, retry_after}} ->
         error_response = %{
           error: "Too many requests",

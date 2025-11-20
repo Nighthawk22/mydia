@@ -12,22 +12,25 @@ defmodule MetadataRelay.Application do
     # Store the selected adapter in application env
     Application.put_env(:metadata_relay, :cache_adapter, cache_adapter)
 
-    children = [
-      # Database repository
-      MetadataRelay.Repo,
-      # PubSub for Phoenix LiveView
-      {Phoenix.PubSub, name: MetadataRelay.PubSub},
-      # Cache adapter (Redis or in-memory)
-      {cache_adapter, cache_opts},
-      # Rate limiter for crash reports
-      MetadataRelay.RateLimiter,
-      # TVDB authentication GenServer
-      MetadataRelay.TVDB.Auth,
-      # OpenSubtitles authentication GenServer
-      MetadataRelay.OpenSubtitles.Auth,
-      # Phoenix endpoint (serves both API and ErrorTracker dashboard)
-      MetadataRelayWeb.Endpoint
-    ]
+    # Build children list with optional OpenSubtitles support
+    children =
+      [
+        # Database repository
+        MetadataRelay.Repo,
+        # PubSub for Phoenix LiveView
+        {Phoenix.PubSub, name: MetadataRelay.PubSub},
+        # Cache adapter (Redis or in-memory)
+        {cache_adapter, cache_opts},
+        # Rate limiter for crash reports
+        MetadataRelay.RateLimiter,
+        # TVDB authentication GenServer
+        MetadataRelay.TVDB.Auth
+      ] ++
+        maybe_opensubtitles_auth() ++
+        [
+          # Phoenix endpoint (serves both API and ErrorTracker dashboard)
+          MetadataRelayWeb.Endpoint
+        ]
 
     opts = [strategy: :one_for_one, name: MetadataRelay.Supervisor]
     Supervisor.start_link(children, opts)
@@ -81,6 +84,20 @@ defmodule MetadataRelay.Application do
 
       _ ->
         {:error, :invalid_redis_url}
+    end
+  end
+
+  defp maybe_opensubtitles_auth do
+    api_key = System.get_env("OPENSUBTITLES_API_KEY")
+    username = System.get_env("OPENSUBTITLES_USERNAME")
+    password = System.get_env("OPENSUBTITLES_PASSWORD")
+
+    if api_key && username && password do
+      Logger.info("OpenSubtitles credentials detected, enabling subtitle support")
+      [MetadataRelay.OpenSubtitles.Auth]
+    else
+      Logger.info("OpenSubtitles credentials not configured, subtitle support disabled")
+      []
     end
   end
 end

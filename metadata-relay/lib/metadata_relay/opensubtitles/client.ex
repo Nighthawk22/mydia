@@ -19,25 +19,23 @@ defmodule MetadataRelay.OpenSubtitles.Client do
 
   Requires OPENSUBTITLES_API_KEY environment variable and a valid JWT token
   from the Auth GenServer.
+
+  Returns `{:ok, client}` on success or `{:error, reason}` if OpenSubtitles
+  is not configured or authentication failed.
   """
   def new do
-    api_key = get_api_key()
-
-    case Auth.get_token() do
-      {:ok, token} ->
-        {:ok,
-         Req.new(
-           base_url: @base_url,
-           headers: [
-             {"Api-Key", api_key},
-             {"Authorization", "Bearer #{token}"},
-             {"Content-Type", "application/json"},
-             {"User-Agent", "metadata-relay v#{MetadataRelay.version()}"}
-           ]
-         )}
-
-      {:error, reason} ->
-        {:error, {:authentication_failed, reason}}
+    with {:ok, api_key} <- get_api_key(),
+         {:ok, token} <- Auth.get_token() do
+      {:ok,
+       Req.new(
+         base_url: @base_url,
+         headers: [
+           {"Api-Key", api_key},
+           {"Authorization", "Bearer #{token}"},
+           {"Content-Type", "application/json"},
+           {"User-Agent", "metadata-relay v#{MetadataRelay.version()}"}
+         ]
+       )}
     end
   end
 
@@ -128,13 +126,10 @@ defmodule MetadataRelay.OpenSubtitles.Client do
   defp get_api_key do
     case System.get_env("OPENSUBTITLES_API_KEY") do
       nil ->
-        raise RuntimeError, """
-        OPENSUBTITLES_API_KEY environment variable is not set.
-        Please set it to your OpenSubtitles API key.
-        """
+        {:error, :not_configured}
 
       key ->
-        key
+        {:ok, key}
     end
   end
 end

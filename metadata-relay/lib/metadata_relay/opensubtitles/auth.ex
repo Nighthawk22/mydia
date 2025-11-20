@@ -35,10 +35,17 @@ defmodule MetadataRelay.OpenSubtitles.Auth do
   @doc """
   Gets the current valid JWT token.
 
-  Returns `{:ok, token}` if authenticated, or `{:error, reason}` if authentication failed.
+  Returns `{:ok, token}` if authenticated, or `{:error, reason}` if authentication failed
+  or OpenSubtitles is not configured.
   """
   def get_token do
-    GenServer.call(__MODULE__, :get_token)
+    case Process.whereis(__MODULE__) do
+      nil ->
+        {:error, :not_configured}
+
+      _pid ->
+        GenServer.call(__MODULE__, :get_token)
+    end
   end
 
   @doc """
@@ -48,6 +55,16 @@ defmodule MetadataRelay.OpenSubtitles.Auth do
   """
   def refresh_token do
     GenServer.call(__MODULE__, :refresh_token)
+  end
+
+  @doc """
+  Checks if OpenSubtitles is configured and available.
+
+  Returns `true` if the Auth GenServer is running (credentials are configured),
+  `false` otherwise.
+  """
+  def configured? do
+    Process.whereis(__MODULE__) != nil
   end
 
   ## Server Callbacks

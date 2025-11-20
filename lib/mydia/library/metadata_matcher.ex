@@ -499,7 +499,7 @@ defmodule Mydia.Library.MetadataMatcher do
       |> add_score(title_similarity(result.title, parsed.title), 0.3)
       |> add_score(year_match?(result.year, parsed.year), 0.1)
       |> add_score(result.popularity > 10, 0.05)
-      |> add_score(Map.get(result, :first_air_date) != nil, 0.05)
+      |> add_score(result.first_air_date != nil, 0.05)
 
     min(score, 1.0)
   end

@@ -311,7 +311,9 @@ defmodule MydiaWeb.MediaLive.Show do
            {:ok, _result} ->
              # Reload the media item to get the updated file list
              updated_media_item =
-               Media.get_media_item!(media_item.id, preload: [episodes: :media_files])
+               Media.get_media_item!(media_item.id,
+                 preload: [episodes: [media_files: :library_path]]
+               )
 
              all_media_files = Enum.flat_map(updated_media_item.episodes, & &1.media_files)
              refresh_result = refresh_files(all_media_files)
@@ -348,7 +350,9 @@ defmodule MydiaWeb.MediaLive.Show do
            {:ok, _result} ->
              # Reload the media item to get the updated file list
              updated_media_item =
-               Media.get_media_item!(media_item.id, preload: [episodes: :media_files])
+               Media.get_media_item!(media_item.id,
+                 preload: [episodes: [media_files: :library_path]]
+               )
 
              season_media_files = get_season_media_files(updated_media_item, season_num)
              refresh_result = refresh_files(season_media_files)
@@ -379,7 +383,9 @@ defmodule MydiaWeb.MediaLive.Show do
          case scan_result do
            {:ok, _result} ->
              # Reload the media item to get the updated file list
-             updated_media_item = Media.get_media_item!(media_item.id, preload: [:media_files])
+             updated_media_item =
+               Media.get_media_item!(media_item.id, preload: [media_files: :library_path])
+
              all_media_files = updated_media_item.media_files
              refresh_result = refresh_files(all_media_files)
              {scan_result, refresh_result}

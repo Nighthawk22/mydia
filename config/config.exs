@@ -237,8 +237,6 @@ config :mydia, Oban,
     # Scheduled jobs
     {Oban.Plugins.Cron,
      crontab: [
-       # Scan library every hour
-       {"0 * * * *", Mydia.Jobs.LibraryScanner},
        # Monitor downloads every 2 minutes
        {"*/2 * * * *", Mydia.Jobs.DownloadMonitor},
        # Search for monitored movies every 30 minutes

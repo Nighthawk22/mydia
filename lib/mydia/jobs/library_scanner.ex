@@ -639,6 +639,72 @@ defmodule Mydia.Jobs.LibraryScanner do
   defp process_media_file(media_file, file_info, metadata_config) do
     Logger.debug("Processing media file for metadata", path: file_info.path)
 
+    # Load library_path to check type restrictions
+    media_file = Repo.preload(media_file, :library_path)
+    library_path = media_file.library_path
+
+    # Early validation: check if file type is compatible with library type
+    # Parse the file to determine its type (movie or TV show)
+    parsed = FileParser.parse(file_info.path)
+
+    case validate_file_type_for_library(parsed.type, library_path, file_info.path) do
+      :ok ->
+        # Type is compatible, proceed with matching
+        match_file_to_existing_items(media_file, file_info, metadata_config, parsed)
+
+      {:error, _reason} = error ->
+        # Type mismatch, skip processing
+        error
+    end
+  end
+
+  defp validate_file_type_for_library(file_type, library_path, file_path) do
+    cond do
+      # Mixed libraries allow both types
+      library_path.type == :mixed ->
+        :ok
+
+      # Series-only library: only allow TV shows
+      library_path.type == :series and file_type == :tv_show ->
+        :ok
+
+      library_path.type == :series and file_type == :movie ->
+        Logger.info("Skipping movie file in series-only library",
+          path: file_path,
+          library_path: library_path.path,
+          library_type: library_path.type
+        )
+
+        {:error, :library_type_mismatch}
+
+      # Movies-only library: only allow movies
+      library_path.type == :movies and file_type == :movie ->
+        :ok
+
+      library_path.type == :movies and file_type == :tv_show ->
+        Logger.info("Skipping TV show file in movies-only library",
+          path: file_path,
+          library_path: library_path.path,
+          library_type: library_path.type
+        )
+
+        {:error, :library_type_mismatch}
+
+      # Unknown file type - let it through for now
+      file_type == :unknown ->
+        Logger.debug("Unknown file type, allowing matching attempt",
+          path: file_path
+        )
+
+        :ok
+
+      # Any other case
+      true ->
+        :ok
+    end
+  end
+
+  defp match_file_to_existing_items(media_file, file_info, metadata_config, _parsed) do
     # Try to match the file to metadata
     case MetadataMatcher.match_file(file_info.path, config: metadata_config) do
       {:ok, match_result} ->
@@ -646,39 +712,57 @@ defmodule Mydia.Jobs.LibraryScanner do
           path: file_info.path,
           title: match_result.title,
           provider_id: match_result.provider_id,
-          confidence: match_result.match_confidence
+          confidence: match_result.match_confidence,
+          from_local_db: Map.get(match_result, :from_local_db, false)
         )
 
-        # Enrich with full metadata
-        case MetadataEnricher.enrich(match_result,
-               config: metadata_config,
-               media_file_id: media_file.id
-             ) do
-          {:ok, media_item} ->
-            Logger.info("Enriched media item",
-              media_item_id: media_item.id,
-              title: media_item.title
-            )
+        # Only enrich if the match is from the local database
+        # This prevents creating new MediaItems - we only want to associate files
+        # with MediaItems that already exist in the database
+        if Map.get(match_result, :from_local_db, false) do
+          # Enrich with full metadata - this will update the existing item
+          # and associate the file with it
+          case MetadataEnricher.enrich(match_result,
+                 config: metadata_config,
+                 media_file_id: media_file.id
+               ) do
+            {:ok, media_item} ->
+              Logger.info("Associated file with existing media item",
+                media_item_id: media_item.id,
+                title: media_item.title,
+                path: file_info.path
+              )
 
-            # Extract technical file metadata (resolution, codec, bitrate, etc.)
-            extract_and_update_file_metadata(media_file, file_info)
-            {:ok, :enriched}
+              # Extract technical file metadata (resolution, codec, bitrate, etc.)
+              extract_and_update_file_metadata(media_file, file_info)
+              {:ok, :enriched}
 
-          {:error, {:library_type_mismatch, message}} ->
-            Logger.warning("Library type mismatch detected",
-              path: file_info.path,
-              error: message
-            )
+            {:error, {:library_type_mismatch, message}} ->
+              Logger.warning("Library type mismatch detected",
+                path: file_info.path,
+                error: message
+              )
 
-            {:error, :library_type_mismatch}
+              {:error, :library_type_mismatch}
 
-          {:error, reason} ->
-            Logger.warning("Failed to enrich media",
-              path: file_info.path,
-              reason: reason
-            )
+            {:error, reason} ->
+              Logger.warning("Failed to enrich media",
+                path: file_info.path,
+                reason: reason
+              )
 
-            {:error, :enrichment_failed}
+              {:error, :enrichment_failed}
+          end
+        else
+          # External match found, but we don't want to create new items
+          # The file will remain orphaned until the user imports it via the Import page
+          Logger.info("Skipping external match - file will remain orphaned for manual import",
+            path: file_info.path,
+            title: match_result.title,
+            provider_id: match_result.provider_id
+          )
+
+          {:error, :no_local_match}
         end
 
       {:error, :unknown_media_type} ->
@@ -689,14 +773,14 @@ defmodule Mydia.Jobs.LibraryScanner do
         {:error, :unknown_media_type}
 
       {:error, :no_matches_found} ->
-        Logger.warning("No metadata matches found",
+        Logger.info("No metadata matches found - file will remain orphaned",
           path: file_info.path
         )
 
         {:error, :no_matches_found}
 
       {:error, :low_confidence_match} ->
-        Logger.warning("Only low confidence matches found",
+        Logger.info("Only low confidence matches found - file will remain orphaned",
           path: file_info.path
         )
 

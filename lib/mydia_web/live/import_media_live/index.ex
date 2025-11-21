@@ -8,30 +8,40 @@ defmodule MydiaWeb.ImportMediaLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(:page_title, "Import Media")
-     |> assign(:step, :select_path)
-     |> assign(:scan_path, "")
-     |> assign(:scanning, false)
-     |> assign(:matching, false)
-     |> assign(:importing, false)
-     |> assign(:discovered_files, [])
-     |> assign(:matched_files, [])
-     |> assign(:grouped_files, %{series: [], movies: [], ungrouped: []})
-     |> assign(:selected_files, MapSet.new())
-     |> assign(:scan_stats, %{total: 0, matched: 0, unmatched: 0, skipped: 0, orphaned: 0})
-     |> assign(:library_paths, Settings.list_library_paths())
-     |> assign(:metadata_config, Metadata.default_relay_config())
-     |> assign(:import_progress, %{current: 0, total: 0, current_file: nil})
-     |> assign(:import_results, %{success: 0, failed: 0, skipped: 0})
-     |> assign(:detailed_results, [])
-     |> assign(:editing_file_index, nil)
-     |> assign(:edit_form, nil)
-     |> assign(:search_query, "")
-     |> assign(:search_results, [])
-     |> assign(:path_suggestions, [])
-     |> assign(:show_path_suggestions, false)}
+    user_id = socket.assigns.current_user.id
+
+    # Try to resume an existing active import session
+    case Library.get_active_import_session(user_id) do
+      nil ->
+        # No active session, start fresh
+        {:ok,
+         socket
+         |> assign(:page_title, "Import Media")
+         |> assign(:import_session, nil)
+         |> assign(:step, :select_path)
+         |> assign(:scan_path, "")
+         |> assign(:scanning, false)
+         |> assign(:matching, false)
+         |> assign(:importing, false)
+         |> assign(:discovered_files, [])
+         |> assign(:matched_files, [])
+         |> assign(:grouped_files, %{series: [], movies: [], ungrouped: []})
+         |> assign(:selected_files, MapSet.new())
+         |> assign(:scan_stats, %{total: 0, matched: 0, unmatched: 0, skipped: 0, orphaned: 0})
+         |> assign(:library_paths, Settings.list_library_paths())
+         |> assign(:metadata_config, Metadata.default_relay_config())
+         |> assign(:import_progress, %{current: 0, total: 0, current_file: nil})
+         |> assign(:import_results, %{success: 0, failed: 0, skipped: 0})
+         |> assign(:detailed_results, [])
+         |> assign(:editing_file_index, nil)
+         |> assign(:edit_form, nil)
+         |> assign(:search_query, "")
+         |> assign(:search_results, [])}
+
+      session ->
+        # Resume existing session
+        {:ok, restore_session(socket, session)}
+    end
   end
 
   @impl true
@@ -42,32 +52,6 @@ defmodule MydiaWeb.ImportMediaLive.Index do
   ## Event Handlers
 
   @impl true
-  def handle_event("update_path", %{"value" => path}, socket) do
-    {:noreply, assign(socket, :scan_path, path)}
-  end
-
-  def handle_event("autocomplete_path", %{"path" => path}, socket) do
-    suggestions = suggest_directories(path)
-
-    {:noreply,
-     socket
-     |> assign(:scan_path, path)
-     |> assign(:path_suggestions, suggestions)
-     |> assign(:show_path_suggestions, suggestions != [])}
-  end
-
-  def handle_event("select_path_suggestion", %{"path" => path}, socket) do
-    {:noreply,
-     socket
-     |> assign(:scan_path, path)
-     |> assign(:show_path_suggestions, false)
-     |> assign(:path_suggestions, [])}
-  end
-
-  def handle_event("hide_path_suggestions", _params, socket) do
-    {:noreply, assign(socket, :show_path_suggestions, false)}
-  end
-
   def handle_event("select_library_path", %{"path_id" => path_id}, socket) do
     with :ok <- Authorization.authorize_import_media(socket) do
       library_path = Enum.find(socket.assigns.library_paths, &(to_string(&1.id) == path_id))
@@ -91,25 +75,6 @@ defmodule MydiaWeb.ImportMediaLive.Index do
     end
   end
 
-  def handle_event("start_scan", _params, socket) do
-    with :ok <- Authorization.authorize_import_media(socket) do
-      if String.trim(socket.assigns.scan_path) != "" do
-        send(self(), {:perform_scan, socket.assigns.scan_path})
-
-        {:noreply,
-         socket
-         |> assign(:scanning, true)
-         |> assign(:step, :review)
-         |> assign(:discovered_files, [])
-         |> assign(:matched_files, [])}
-      else
-        {:noreply, put_flash(socket, :error, "Please enter a path to scan")}
-      end
-    else
-      {:unauthorized, socket} -> {:noreply, socket}
-    end
-  end
-
   def handle_event("toggle_file_selection", %{"index" => index_str}, socket) do
     index = String.to_integer(index_str)
     selected_files = socket.assigns.selected_files
@@ -121,7 +86,12 @@ defmodule MydiaWeb.ImportMediaLive.Index do
         MapSet.put(selected_files, index)
       end
 
-    {:noreply, assign(socket, :selected_files, selected_files)}
+    socket =
+      socket
+      |> assign(:selected_files, selected_files)
+      |> persist_session()
+
+    {:noreply, socket}
   end
 
   def handle_event("select_all_files", _params, socket) do
@@ -133,11 +103,21 @@ defmodule MydiaWeb.ImportMediaLive.Index do
       |> Enum.map(fn {_file, idx} -> idx end)
       |> MapSet.new()
 
-    {:noreply, assign(socket, :selected_files, matched_indices)}
+    socket =
+      socket
+      |> assign(:selected_files, matched_indices)
+      |> persist_session()
+
+    {:noreply, socket}
   end
 
   def handle_event("deselect_all_files", _params, socket) do
-    {:noreply, assign(socket, :selected_files, MapSet.new())}
+    socket =
+      socket
+      |> assign(:selected_files, MapSet.new())
+      |> persist_session()
+
+    {:noreply, socket}
   end
 
   def handle_event("toggle_season_selection", %{"indices" => indices_str}, socket) do
@@ -161,7 +141,12 @@ defmodule MydiaWeb.ImportMediaLive.Index do
         MapSet.union(selected_files, indices)
       end
 
-    {:noreply, assign(socket, :selected_files, selected_files)}
+    socket =
+      socket
+      |> assign(:selected_files, selected_files)
+      |> persist_session()
+
+    {:noreply, socket}
   end
 
   def handle_event("start_import", _params, socket) do
@@ -169,14 +154,17 @@ defmodule MydiaWeb.ImportMediaLive.Index do
       if MapSet.size(socket.assigns.selected_files) > 0 do
         send(self(), :perform_import)
 
-        {:noreply,
-         socket
-         |> assign(:importing, true)
-         |> assign(:step, :importing)
-         |> assign(
-           :import_progress,
-           %{current: 0, total: MapSet.size(socket.assigns.selected_files), current_file: nil}
-         )}
+        socket =
+          socket
+          |> assign(:importing, true)
+          |> assign(:step, :importing)
+          |> assign(
+            :import_progress,
+            %{current: 0, total: MapSet.size(socket.assigns.selected_files), current_file: nil}
+          )
+          |> persist_session()
+
+        {:noreply, socket}
       else
         {:noreply, put_flash(socket, :error, "Please select at least one file to import")}
       end
@@ -186,15 +174,26 @@ defmodule MydiaWeb.ImportMediaLive.Index do
   end
 
   def handle_event("start_over", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:step, :select_path)
-     |> assign(:scan_path, "")
-     |> assign(:discovered_files, [])
-     |> assign(:matched_files, [])
-     |> assign(:selected_files, MapSet.new())
-     |> assign(:import_results, %{success: 0, failed: 0, skipped: 0})
-     |> assign(:detailed_results, [])}
+    # Abandon the current session
+    if socket.assigns.import_session do
+      Library.abandon_active_import_sessions(socket.assigns.current_user.id)
+    end
+
+    socket =
+      socket
+      |> assign(:import_session, nil)
+      |> assign(:step, :select_path)
+      |> assign(:scan_path, "")
+      |> assign(:discovered_files, [])
+      |> assign(:matched_files, [])
+      |> assign(:grouped_files, %{series: [], movies: [], ungrouped: []})
+      |> assign(:selected_files, MapSet.new())
+      |> assign(:scan_stats, %{total: 0, matched: 0, unmatched: 0, skipped: 0, orphaned: 0})
+      |> assign(:import_progress, %{current: 0, total: 0, current_file: nil})
+      |> assign(:import_results, %{success: 0, failed: 0, skipped: 0})
+      |> assign(:detailed_results, [])
+
+    {:noreply, socket}
   end
 
   def handle_event("cancel", _params, socket) do
@@ -328,16 +327,19 @@ defmodule MydiaWeb.ImportMediaLive.Index do
             do: "Match updated successfully",
             else: "Match created successfully"
 
-        {:noreply,
-         socket
-         |> assign(:matched_files, updated_matched_files)
-         |> assign(:grouped_files, grouped_files)
-         |> assign(:scan_stats, scan_stats)
-         |> assign(:editing_file_index, nil)
-         |> assign(:edit_form, nil)
-         |> assign(:search_query, "")
-         |> assign(:search_results, [])
-         |> put_flash(:info, flash_message)}
+        socket =
+          socket
+          |> assign(:matched_files, updated_matched_files)
+          |> assign(:grouped_files, grouped_files)
+          |> assign(:scan_stats, scan_stats)
+          |> assign(:editing_file_index, nil)
+          |> assign(:edit_form, nil)
+          |> assign(:search_query, "")
+          |> assign(:search_results, [])
+          |> persist_session()
+          |> put_flash(:info, flash_message)
+
+        {:noreply, socket}
       else
         {:noreply,
          socket
@@ -398,12 +400,15 @@ defmodule MydiaWeb.ImportMediaLive.Index do
       # Remove from selected files if it was selected
       selected_files = MapSet.delete(socket.assigns.selected_files, index)
 
-      {:noreply,
-       socket
-       |> assign(:matched_files, updated_matched_files)
-       |> assign(:grouped_files, grouped_files)
-       |> assign(:selected_files, selected_files)
-       |> put_flash(:info, "Match cleared")}
+      socket =
+        socket
+        |> assign(:matched_files, updated_matched_files)
+        |> assign(:grouped_files, grouped_files)
+        |> assign(:selected_files, selected_files)
+        |> persist_session()
+        |> put_flash(:info, "Match cleared")
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -666,19 +671,22 @@ defmodule MydiaWeb.ImportMediaLive.Index do
       |> Enum.map(fn {_file, idx} -> idx end)
       |> MapSet.new()
 
-    {:noreply,
-     socket
-     |> assign(:matching, false)
-     |> assign(:step, :review)
-     |> assign(:matched_files, matched_files)
-     |> assign(:grouped_files, grouped_files)
-     |> assign(:selected_files, auto_selected)
-     |> assign(:scan_stats, %{
-       total: length(files),
-       matched: matched_count,
-       unmatched: unmatched_count,
-       skipped: socket.assigns.scan_stats.skipped
-     })}
+    socket =
+      socket
+      |> assign(:matching, false)
+      |> assign(:step, :review)
+      |> assign(:matched_files, matched_files)
+      |> assign(:grouped_files, grouped_files)
+      |> assign(:selected_files, auto_selected)
+      |> assign(:scan_stats, %{
+        total: length(files),
+        matched: matched_count,
+        unmatched: unmatched_count,
+        skipped: socket.assigns.scan_stats.skipped
+      })
+      |> persist_session()
+
+    {:noreply, socket}
   end
 
   def handle_info(:perform_import, socket) do
@@ -700,16 +708,24 @@ defmodule MydiaWeb.ImportMediaLive.Index do
     failed_count = Enum.count(detailed_results, &(&1.status == :failed))
     skipped_count = Enum.count(detailed_results, &(&1.status == :skipped))
 
-    {:noreply,
-     socket
-     |> assign(:importing, false)
-     |> assign(:step, :complete)
-     |> assign(:import_results, %{
-       success: success_count,
-       failed: failed_count,
-       skipped: skipped_count
-     })
-     |> assign(:detailed_results, detailed_results)}
+    socket =
+      socket
+      |> assign(:importing, false)
+      |> assign(:step, :complete)
+      |> assign(:import_results, %{
+        success: success_count,
+        failed: failed_count,
+        skipped: skipped_count
+      })
+      |> assign(:detailed_results, detailed_results)
+      |> persist_session()
+
+    # Mark session as completed
+    if socket.assigns.import_session do
+      Library.complete_import_session(socket.assigns.import_session)
+    end
+
+    {:noreply, socket}
   end
 
   def handle_info({:update_import_progress, current, current_file}, socket) do
@@ -719,6 +735,178 @@ defmodule MydiaWeb.ImportMediaLive.Index do
        | current: current,
          current_file: current_file
      })}
+  end
+
+  ## Session Management
+
+  defp restore_session(socket, session) do
+    session_data = session.session_data || %{}
+
+    socket
+    |> assign(:page_title, "Import Media")
+    |> assign(:import_session, session)
+    |> assign(:step, session.step)
+    |> assign(:scan_path, session.scan_path || "")
+    |> assign(:scanning, false)
+    |> assign(:matching, false)
+    |> assign(:importing, session.step == :importing)
+    |> assign(:discovered_files, Map.get(session_data, "discovered_files", []))
+    |> assign(
+      :matched_files,
+      restore_matched_files(Map.get(session_data, "matched_files", []))
+    )
+    |> assign(
+      :grouped_files,
+      Map.get(
+        session_data,
+        "grouped_files",
+        %{"series" => [], "movies" => [], "ungrouped" => []}
+      )
+      |> atomize_grouped_files()
+    )
+    |> assign(
+      :selected_files,
+      Map.get(session_data, "selected_files", []) |> MapSet.new()
+    )
+    |> assign(:scan_stats, session.scan_stats || %{})
+    |> assign(:library_paths, Settings.list_library_paths())
+    |> assign(:metadata_config, Metadata.default_relay_config())
+    |> assign(
+      :import_progress,
+      session.import_progress || %{current: 0, total: 0, current_file: nil}
+    )
+    |> assign(:import_results, session.import_results || %{success: 0, failed: 0, skipped: 0})
+    |> assign(
+      :detailed_results,
+      Map.get(session_data, "detailed_results", [])
+      |> atomize_detailed_results()
+    )
+    |> assign(:editing_file_index, nil)
+    |> assign(:edit_form, nil)
+    |> assign(:search_query, "")
+    |> assign(:search_results, [])
+  end
+
+  defp persist_session(socket) do
+    session = socket.assigns.import_session
+    user_id = socket.assigns.current_user.id
+
+    session_data = %{
+      "discovered_files" => socket.assigns.discovered_files,
+      "matched_files" => prepare_matched_files_for_storage(socket.assigns.matched_files),
+      "grouped_files" => socket.assigns.grouped_files,
+      "selected_files" => MapSet.to_list(socket.assigns.selected_files),
+      "detailed_results" => socket.assigns.detailed_results
+    }
+
+    attrs = %{
+      step: socket.assigns.step,
+      scan_path: socket.assigns.scan_path,
+      session_data: session_data,
+      scan_stats: socket.assigns.scan_stats,
+      import_progress: socket.assigns.import_progress,
+      import_results: socket.assigns.import_results
+    }
+
+    case session do
+      nil ->
+        # Create new session
+        case Library.create_import_session(Map.put(attrs, :user_id, user_id)) do
+          {:ok, new_session} ->
+            assign(socket, :import_session, new_session)
+
+          {:error, _changeset} ->
+            socket
+        end
+
+      %Library.ImportSession{} = existing_session ->
+        # Update existing session
+        case Library.update_import_session(existing_session, attrs) do
+          {:ok, updated_session} ->
+            assign(socket, :import_session, updated_session)
+
+          {:error, _changeset} ->
+            socket
+        end
+    end
+  end
+
+  defp prepare_matched_files_for_storage(matched_files) do
+    Enum.map(matched_files, fn matched_file ->
+      %{
+        "file" => matched_file.file,
+        "match_result" => matched_file.match_result,
+        "import_status" => matched_file.import_status
+      }
+    end)
+  end
+
+  defp restore_matched_files(stored_files) do
+    Enum.map(stored_files, fn stored_file ->
+      %{
+        file: atomize_keys(stored_file["file"]),
+        match_result:
+          if stored_file["match_result"] do
+            atomize_match_result(stored_file["match_result"])
+          else
+            nil
+          end,
+        import_status: String.to_existing_atom(stored_file["import_status"] || "pending")
+      }
+    end)
+  end
+
+  defp atomize_keys(nil), do: nil
+
+  defp atomize_keys(map) when is_map(map) do
+    Map.new(map, fn
+      {key, value} when is_binary(key) ->
+        {String.to_existing_atom(key), atomize_keys(value)}
+
+      {key, value} ->
+        {key, atomize_keys(value)}
+    end)
+  rescue
+    ArgumentError ->
+      # If atom doesn't exist, return the map as-is
+      map
+  end
+
+  defp atomize_keys(list) when is_list(list), do: Enum.map(list, &atomize_keys/1)
+  defp atomize_keys(value), do: value
+
+  defp atomize_match_result(nil), do: nil
+
+  defp atomize_match_result(match) when is_map(match) do
+    match
+    |> Map.new(fn
+      {"parsed_info", parsed_info} when is_map(parsed_info) ->
+        {:parsed_info, atomize_keys(parsed_info)}
+
+      {"metadata", metadata} when is_map(metadata) ->
+        {:metadata, atomize_keys(metadata)}
+
+      {key, value} when is_binary(key) ->
+        {String.to_existing_atom(key), value}
+
+      {key, value} ->
+        {key, value}
+    end)
+  rescue
+    ArgumentError ->
+      match
+  end
+
+  defp atomize_grouped_files(grouped) when is_map(grouped) do
+    %{
+      series: atomize_keys(Map.get(grouped, "series", [])),
+      movies: atomize_keys(Map.get(grouped, "movies", [])),
+      ungrouped: atomize_keys(Map.get(grouped, "ungrouped", []))
+    }
+  end
+
+  defp atomize_detailed_results(results) when is_list(results) do
+    Enum.map(results, &atomize_keys/1)
   end
 
   ## Private Helpers
@@ -950,73 +1138,6 @@ defmodule MydiaWeb.ImportMediaLive.Index do
   end
 
   defp parse_episode_list(value) when is_list(value), do: {:ok, value}
-
-  # Suggest directories based on partial path input
-  defp suggest_directories(path) when is_binary(path) do
-    # Only suggest if path is at least 2 characters
-    if String.length(String.trim(path)) < 2 do
-      []
-    else
-      # Determine the directory to list and the filter prefix
-      {dir_to_list, filter_prefix} = parse_path_for_suggestions(path)
-
-      case list_directories_safe(dir_to_list) do
-        {:ok, entries} ->
-          entries
-          |> Enum.filter(fn entry ->
-            String.starts_with?(entry, filter_prefix)
-          end)
-          |> Enum.take(10)
-          |> Enum.map(fn entry ->
-            Path.join(dir_to_list, entry)
-          end)
-
-        {:error, _reason} ->
-          []
-      end
-    end
-  end
-
-  # Parse the path to determine which directory to list and what to filter by
-  defp parse_path_for_suggestions(path) do
-    path = String.trim(path)
-
-    cond do
-      # If path ends with /, list that directory
-      String.ends_with?(path, "/") ->
-        {path, ""}
-
-      # If path contains /, split into directory and prefix
-      String.contains?(path, "/") ->
-        dir = Path.dirname(path)
-        basename = Path.basename(path)
-        {dir, basename}
-
-      # Otherwise, list root and filter by the entire path
-      true ->
-        {"/", path}
-    end
-  end
-
-  # Safely list directories with error handling
-  defp list_directories_safe(dir) do
-    case File.ls(dir) do
-      {:ok, entries} ->
-        # Filter to only include directories
-        directories =
-          entries
-          |> Enum.filter(fn entry ->
-            full_path = Path.join(dir, entry)
-            File.dir?(full_path)
-          end)
-          |> Enum.sort()
-
-        {:ok, directories}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
 
   # Calculates the relative path and library_path_id for an absolute file path
   # Returns {library_path_id, relative_path}

@@ -20,12 +20,7 @@
 
     <%!-- Step 1: Select Path --%>
     <%= if @step == :select_path do %>
-      <Components.path_selection_screen
-        scan_path={@scan_path}
-        library_paths={@library_paths}
-        show_path_suggestions={@show_path_suggestions}
-        path_suggestions={@path_suggestions}
-      />
+      <Components.path_selection_screen library_paths={@library_paths} />
     <% end %>
 
     <%!-- Loading State: Scanning and Matching --%>

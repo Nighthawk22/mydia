@@ -41,15 +41,9 @@ defmodule MydiaWeb.ImportMediaLive.Components do
   Renders the path selection screen where users choose a directory to scan.
 
   ## Attributes
-    * `:scan_path` - Current path value
     * `:library_paths` - List of available library paths
-    * `:show_path_suggestions` - Whether to show path autocomplete suggestions
-    * `:path_suggestions` - List of path suggestions for autocomplete
   """
-  attr :scan_path, :string, required: true
   attr :library_paths, :list, default: []
-  attr :show_path_suggestions, :boolean, default: false
-  attr :path_suggestions, :list, default: []
 
   def path_selection_screen(assigns) do
     ~H"""
@@ -57,51 +51,10 @@ defmodule MydiaWeb.ImportMediaLive.Components do
       <div class="card-body">
         <h2 class="card-title">Select Directory to Scan</h2>
         <p class="text-sm text-base-content/70 mb-3">
-          Enter a filesystem path or choose from your configured library paths.
+          Choose from your configured library paths to begin scanning for media files.
         </p>
 
-        <%!-- Manual Path Input --%>
-        <div class="bg-base-200/30 rounded-lg p-3 mb-3">
-          <div class="flex items-center gap-2 mb-2">
-            <.icon name="hero-pencil-square" class="w-4 h-4 text-base-content/70" />
-            <span class="text-sm font-medium">Custom Path</span>
-          </div>
-          <form phx-change="autocomplete_path">
-            <div class="relative">
-              <input
-                type="text"
-                name="path"
-                id="path-input"
-                placeholder="/path/to/media/folder"
-                class="input input-bordered w-full"
-                value={@scan_path}
-                phx-debounce="300"
-                autocomplete="off"
-                phx-hook="PathAutocomplete"
-              />
-              <%= if @show_path_suggestions and @path_suggestions != [] do %>
-                <div
-                  class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-48 overflow-y-auto"
-                  id="path-suggestions"
-                  phx-click-away="hide_path_suggestions"
-                >
-                  <%= for suggestion <- @path_suggestions do %>
-                    <div
-                      class="w-full text-left px-3 py-2 text-sm hover:bg-base-200 border-b border-base-300 last:border-b-0 flex items-center gap-2 cursor-pointer"
-                      phx-click="select_path_suggestion"
-                      phx-value-path={suggestion}
-                    >
-                      <.icon name="hero-folder" class="w-4 h-4 text-primary" />
-                      <span class="font-mono truncate">{suggestion}</span>
-                    </div>
-                  <% end %>
-                </div>
-              <% end %>
-            </div>
-          </form>
-        </div>
-
-        <%!-- Quick Select from Library Paths --%>
+        <%!-- Library Paths --%>
         <%= if @library_paths != [] do %>
           <div class="bg-primary/5 rounded-lg p-3">
             <div class="flex items-center gap-2 mb-2">
@@ -123,18 +76,14 @@ defmodule MydiaWeb.ImportMediaLive.Components do
               <% end %>
             </div>
           </div>
+        <% else %>
+          <div class="alert alert-warning">
+            <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
+            <span>
+              No library paths configured. Please add a library path in Settings to begin importing media.
+            </span>
+          </div>
         <% end %>
-
-        <div class="card-actions justify-end mt-4">
-          <button
-            type="button"
-            class="btn btn-primary"
-            phx-click="start_scan"
-            disabled={String.trim(@scan_path) == ""}
-          >
-            <.icon name="hero-magnifying-glass" class="w-5 h-5" /> Start Scan
-          </button>
-        </div>
       </div>
     </div>
     """

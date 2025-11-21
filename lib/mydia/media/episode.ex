@@ -13,7 +13,7 @@ defmodule Mydia.Media.Episode do
     field :episode_number, :integer
     field :title, :string
     field :air_date, :date
-    field :metadata, :map
+    field :metadata, Mydia.Media.EpisodeDataType
     field :monitored, :boolean, default: true
 
     belongs_to :media_item, Mydia.Media.MediaItem

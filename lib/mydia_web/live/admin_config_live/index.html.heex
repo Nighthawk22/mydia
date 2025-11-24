@@ -259,8 +259,8 @@
                   <%= for profile <- @quality_profiles do %>
                     <tr>
                       <td class="font-medium">{profile.name}</td>
-                      <td>{get_in(profile.rules, ["min_size_mb"]) || "-"}</td>
-                      <td>{get_in(profile.rules, ["max_size_mb"]) || "-"}</td>
+                      <td>{get_in(profile.quality_standards, [:movie_min_size_mb]) || "-"}</td>
+                      <td>{get_in(profile.quality_standards, [:movie_max_size_mb]) || "-"}</td>
                       <td>{Enum.join(profile.qualities, ", ")}</td>
                       <td>
                         <div class="flex gap-2">

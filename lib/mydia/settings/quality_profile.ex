@@ -53,9 +53,6 @@ defmodule Mydia.Settings.QualityProfile do
     field :upgrades_allowed, :boolean, default: true
     field :upgrade_until_quality, :string
     field :qualities, {:array, :string}
-    # Rules can contain arbitrary filtering rules, including:
-    # - min_ratio: Minimum seeder/leecher ratio (e.g., 0.15 for 15%)
-    field :rules, :map
 
     # Enhanced fields for import/export and configuration management
     field :description, :string
@@ -82,7 +79,6 @@ defmodule Mydia.Settings.QualityProfile do
       :upgrades_allowed,
       :upgrade_until_quality,
       :qualities,
-      :rules,
       :description,
       :is_system,
       :version,

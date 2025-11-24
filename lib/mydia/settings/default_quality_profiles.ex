@@ -14,7 +14,7 @@ defmodule Mydia.Settings.DefaultQualityProfiles do
   - `qualities` - List of allowed quality strings (resolutions, sources, etc.)
   - `upgrades_allowed` - Whether automatic quality upgrades are allowed
   - `upgrade_until_quality` - Maximum quality to upgrade to (if upgrades enabled)
-  - `rules` - Map containing additional rules (size limits, preferred sources, etc.)
+  - `description` - Human-readable description of the profile
 
   ## Profile Descriptions
 
@@ -35,23 +35,21 @@ defmodule Mydia.Settings.DefaultQualityProfiles do
         qualities: ["360p", "480p", "576p", "720p", "1080p", "2160p"],
         upgrades_allowed: true,
         upgrade_until_quality: "2160p",
-        rules: %{
-          min_size_mb: nil,
-          max_size_mb: nil,
-          preferred_sources: [],
-          description: "Any quality, no size limits. Maximizes availability."
-        }
+        description: "Any quality, no size limits. Maximizes availability.",
+        quality_standards: %{}
       },
       %{
         name: "SD",
         qualities: ["480p", "576p"],
         upgrades_allowed: true,
         upgrade_until_quality: "576p",
-        rules: %{
-          min_size_mb: nil,
-          max_size_mb: 2048,
+        description: "Standard Definition up to 480p/DVD quality. Limited to 2GB.",
+        quality_standards: %{
+          max_resolution: "576p",
+          preferred_resolutions: ["480p", "576p"],
           preferred_sources: ["DVD", "DVDRip", "SDTV"],
-          description: "Standard Definition up to 480p/DVD quality. Limited to 2GB."
+          movie_max_size_mb: 2048,
+          episode_max_size_mb: 1024
         }
       },
       %{
@@ -59,11 +57,17 @@ defmodule Mydia.Settings.DefaultQualityProfiles do
         qualities: ["720p"],
         upgrades_allowed: false,
         upgrade_until_quality: nil,
-        rules: %{
-          min_size_mb: 1024,
-          max_size_mb: 5120,
+        description: "720p HD content. Balanced quality and file size (1-5GB).",
+        quality_standards: %{
+          min_resolution: "720p",
+          max_resolution: "720p",
+          preferred_resolutions: ["720p"],
           preferred_sources: ["BluRay", "WEB-DL", "HDTV"],
-          description: "720p HD content. Balanced quality and file size (1-5GB)."
+          preferred_video_codecs: ["h264", "h265"],
+          movie_min_size_mb: 1024,
+          movie_max_size_mb: 5120,
+          episode_min_size_mb: 512,
+          episode_max_size_mb: 2560
         }
       },
       %{
@@ -71,11 +75,17 @@ defmodule Mydia.Settings.DefaultQualityProfiles do
         qualities: ["1080p"],
         upgrades_allowed: false,
         upgrade_until_quality: nil,
-        rules: %{
-          min_size_mb: 2048,
-          max_size_mb: 15360,
+        description: "1080p Full HD content. Standard high quality (2-15GB).",
+        quality_standards: %{
+          min_resolution: "1080p",
+          max_resolution: "1080p",
+          preferred_resolutions: ["1080p"],
           preferred_sources: ["BluRay", "WEB-DL"],
-          description: "1080p Full HD content. Standard high quality (2-15GB)."
+          preferred_video_codecs: ["h265", "h264"],
+          movie_min_size_mb: 2048,
+          movie_max_size_mb: 15360,
+          episode_min_size_mb: 1024,
+          episode_max_size_mb: 7680
         }
       },
       %{
@@ -83,11 +93,18 @@ defmodule Mydia.Settings.DefaultQualityProfiles do
         qualities: ["1080p"],
         upgrades_allowed: false,
         upgrade_until_quality: nil,
-        rules: %{
-          min_size_mb: 4096,
-          max_size_mb: 20480,
+        description: "Strict 1080p with high-quality sources only (4-20GB).",
+        quality_standards: %{
+          min_resolution: "1080p",
+          max_resolution: "1080p",
+          preferred_resolutions: ["1080p"],
           preferred_sources: ["REMUX", "BluRay"],
-          description: "Strict 1080p with high-quality sources only (4-20GB)."
+          preferred_video_codecs: ["h265", "h264"],
+          min_video_bitrate_mbps: 10.0,
+          movie_min_size_mb: 4096,
+          movie_max_size_mb: 20480,
+          episode_min_size_mb: 2048,
+          episode_max_size_mb: 10240
         }
       },
       %{
@@ -95,11 +112,19 @@ defmodule Mydia.Settings.DefaultQualityProfiles do
         qualities: ["1080p"],
         upgrades_allowed: false,
         upgrade_until_quality: nil,
-        rules: %{
-          min_size_mb: 20480,
-          max_size_mb: 40960,
+        description: "Lossless 1080p REMUX releases. Premium quality (20-40GB).",
+        quality_standards: %{
+          min_resolution: "1080p",
+          max_resolution: "1080p",
+          preferred_resolutions: ["1080p"],
           preferred_sources: ["REMUX"],
-          description: "Lossless 1080p REMUX releases. Premium quality (20-40GB)."
+          preferred_video_codecs: ["h265", "h264"],
+          preferred_audio_codecs: ["truehd", "dts-hd", "atmos"],
+          min_video_bitrate_mbps: 15.0,
+          movie_min_size_mb: 20480,
+          movie_max_size_mb: 40960,
+          episode_min_size_mb: 10240,
+          episode_max_size_mb: 20480
         }
       },
       %{
@@ -107,11 +132,19 @@ defmodule Mydia.Settings.DefaultQualityProfiles do
         qualities: ["2160p"],
         upgrades_allowed: false,
         upgrade_until_quality: nil,
-        rules: %{
-          min_size_mb: 15360,
-          max_size_mb: 81920,
+        description: "Ultra HD 2160p/4K content. Maximum quality (15-80GB).",
+        quality_standards: %{
+          min_resolution: "2160p",
+          max_resolution: "2160p",
+          preferred_resolutions: ["2160p"],
           preferred_sources: ["REMUX", "BluRay", "WEB-DL"],
-          description: "Ultra HD 2160p/4K content. Maximum quality (15-80GB)."
+          preferred_video_codecs: ["h265", "av1"],
+          preferred_audio_codecs: ["atmos", "truehd", "dts-hd"],
+          hdr_formats: ["dolby_vision", "hdr10+", "hdr10"],
+          movie_min_size_mb: 15360,
+          movie_max_size_mb: 81920,
+          episode_min_size_mb: 7680,
+          episode_max_size_mb: 40960
         }
       },
       %{
@@ -119,11 +152,20 @@ defmodule Mydia.Settings.DefaultQualityProfiles do
         qualities: ["2160p"],
         upgrades_allowed: false,
         upgrade_until_quality: nil,
-        rules: %{
-          min_size_mb: 40960,
-          max_size_mb: 102_400,
+        description: "Lossless 4K REMUX releases. Ultimate quality (40-100GB).",
+        quality_standards: %{
+          min_resolution: "2160p",
+          max_resolution: "2160p",
+          preferred_resolutions: ["2160p"],
           preferred_sources: ["REMUX"],
-          description: "Lossless 4K REMUX releases. Ultimate quality (40-100GB)."
+          preferred_video_codecs: ["h265", "av1"],
+          preferred_audio_codecs: ["atmos", "truehd", "dts-hd"],
+          hdr_formats: ["dolby_vision", "hdr10+", "hdr10"],
+          min_video_bitrate_mbps: 25.0,
+          movie_min_size_mb: 40960,
+          movie_max_size_mb: 102_400,
+          episode_min_size_mb: 20480,
+          episode_max_size_mb: 51200
         }
       }
     ]

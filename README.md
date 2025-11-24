@@ -74,6 +74,29 @@ A modern, self-hosted media management platform for tracking, organizing, and mo
 
 **Choose Radarr/Sonarr for:** Mature ecosystem, advanced custom formats, comprehensive automation, wider integrations
 
+## 📊 Quality Profile Features
+
+For users familiar with **Profilarr** and advanced quality management in the Radarr/Sonarr ecosystem, here's how Mydia's quality profile system compares:
+
+**What Mydia Has:**
+- ✅ **Built-in Quality Profiles** – 8 predefined profiles covering SD to Remux-2160p, fully customizable via Admin UI
+- ✅ **Resolution Filtering** – Define allowed qualities per profile (360p through 2160p)
+- ✅ **Size Constraints** – Min/max file size limits per profile
+- ✅ **Source Preferences** – Prefer BluRay, WEB-DL, REMUX, etc.
+- ✅ **Intelligent Scoring** – 0-100 ranking system weighing quality (40%), source (30%), size (20%), and seeder health (10%)
+- ✅ **Upgrade Rules** – Enable/disable upgrades and set upgrade-until-quality limits
+- ✅ **Per-Item Assignment** – Assign profiles to individual media items or library paths
+- ✅ **Automatic Matching** – Profiles actively drive search ranking and download decisions
+
+**What Mydia Doesn't Have (Yet):**
+- ❌ **Advanced Custom Formats** – No support for complex multi-condition formats like Profilarr/TRaSH Guides (planned)
+- ❌ **Profile Sync/Import** – Profiles are managed locally, no Git-based version control or remote database sync
+- ❌ **Negative Scoring** – Can't penalize unwanted formats, only prefer/allow certain qualities
+- ❌ **Tag-Based Filtering** – No PROPER/REPACK preference or CAM/TS blocking (basic detection exists for naming)
+
+**Implementation Difference:**
+Mydia's quality profiles are tightly integrated into the core application rather than being a separate configuration management layer. Profiles are stored in the database and used directly by the search and download system to score and rank releases automatically.
+
 ## 📸 Screenshots
 
 <table>

@@ -26,6 +26,7 @@ defmodule Mydia.Indexers do
   alias Mydia.Indexers.Adapter
   alias Mydia.Indexers.SearchResult
   alias Mydia.Indexers.RateLimiter
+  alias Mydia.Indexers.ReleaseRanker
   alias Mydia.Indexers.CardigannDefinition
   alias Mydia.Settings
   alias Mydia.Repo
@@ -162,7 +163,7 @@ defmodule Mydia.Indexers do
         |> then(fn results ->
           if should_deduplicate, do: deduplicate_results(results), else: results
         end)
-        |> rank_results()
+        |> rank_results(min_seeders)
         |> Enum.take(max_results)
 
       total_time = System.monotonic_time(:millisecond) - start_time
@@ -305,38 +306,13 @@ defmodule Mydia.Indexers do
     quality != nil && quality.resolution != nil && quality.source != nil
   end
 
-  defp rank_results(results) do
-    results
-    |> Enum.sort_by(&ranking_score/1, :desc)
-  end
+  defp rank_results(results, min_seeders) do
+    # Use the unified ReleaseRanker for consistent scoring across manual and automated searches
+    # This provides sophisticated ranking with size scoring, age scoring, and seeder ratio multipliers
+    ranked_results = ReleaseRanker.rank_all(results, min_seeders: min_seeders)
 
-  defp ranking_score(result) do
-    quality_score = calculate_quality_score(result)
-    seeder_score = calculate_seeder_score(result.seeders)
-    health_score = SearchResult.health_score(result) * 100
-
-    # Weighted scoring:
-    # - Quality: 60% (most important for media)
-    # - Seeders: 30% (important for download speed)
-    # - Health: 10% (good balance indicator)
-    quality_score * 0.6 + seeder_score * 0.3 + health_score * 0.1
-  end
-
-  defp calculate_quality_score(%SearchResult{quality: nil}), do: 0.0
-
-  defp calculate_quality_score(%SearchResult{quality: quality}) do
-    alias Mydia.Indexers.QualityParser
-
-    # Use the QualityParser's scoring, normalized to 0-1000 range
-    QualityParser.quality_score(quality) |> min(2000) |> max(0)
-  end
-
-  defp calculate_seeder_score(seeders) when seeders <= 0, do: 0.0
-
-  defp calculate_seeder_score(seeders) do
-    # Logarithmic scale for seeders (diminishing returns)
-    # 1 seeder = ~0, 10 seeders = ~100, 100 seeders = ~200, 1000 seeders = ~300
-    :math.log10(seeders) * 100
+    # Extract the SearchResult from each RankedResult to maintain the expected return type
+    Enum.map(ranked_results, fn ranked -> ranked.result end)
   end
 
   defp indexer_config_to_adapter_config(%Settings.IndexerConfig{} = config) do

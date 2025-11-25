@@ -281,7 +281,9 @@ defmodule MydiaWeb.AdminConfigLive.Components do
               <.icon name="hero-check-circle" class="w-8 h-8" />
             </div>
             <div class="stat-title">Sent</div>
-            <div class="stat-value text-success">{@crash_report_stats.sent_reports || 0}</div>
+            <div class="stat-value text-success">
+              {Map.get(@crash_report_stats, :sent_reports, 0)}
+            </div>
             <div class="stat-desc">Successfully reported</div>
           </div>
           <%= if @crash_report_stats.queued_reports > 0 do %>

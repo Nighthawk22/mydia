@@ -19,9 +19,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
   def hero_section(assigns) do
     ~H"""
     <%!-- Left Column: Poster and Quick Actions --%>
-    <div class="lg:w-80 flex-shrink-0">
-      <%!-- Poster --%>
-      <div class="card bg-base-100 shadow-xl mb-4">
+    <div class="w-full md:w-64 lg:w-80 flex-shrink-0">
+      <%!-- Poster - centered and smaller on mobile --%>
+      <div class="card bg-base-100 shadow-xl mb-4 mx-auto w-48 sm:w-56 md:w-full">
         <figure class="aspect-[2/3] bg-base-300">
           <img
             src={get_poster_url(@media_item)}
@@ -69,68 +69,77 @@ defmodule MydiaWeb.MediaLive.Show.Components do
           <.icon name="hero-magnifying-glass" class="w-5 h-5" /> Manual Search
         </button>
 
-        <button
-          type="button"
-          phx-click="toggle_monitored"
-          class={[
-            "btn btn-block",
-            @media_item.monitored && "btn-success",
-            !@media_item.monitored && "btn-ghost"
-          ]}
-        >
-          <.icon
-            name={if @media_item.monitored, do: "hero-bookmark-solid", else: "hero-bookmark"}
-            class="w-5 h-5"
-          />
-          {if @media_item.monitored, do: "Monitored", else: "Not Monitored"}
-        </button>
-
-        <button
-          type="button"
-          phx-click="refresh_metadata"
-          class="btn btn-ghost btn-block"
-          title="Refresh metadata and episodes from metadata provider"
-        >
-          <.icon name="hero-arrow-path" class="w-5 h-5" /> Refresh Metadata
-        </button>
-
-        <%= if @media_item.type == "tv_show" && has_media_files?(@media_item) do %>
+        <%!-- Secondary actions in a 2-column grid on mobile --%>
+        <div class="grid grid-cols-2 gap-2">
           <button
             type="button"
-            phx-click="rescan_series"
-            class="btn btn-ghost btn-block"
-            title="Re-scan series: discover new files and refresh metadata for all episodes"
+            phx-click="toggle_monitored"
+            class={[
+              "btn btn-sm md:btn-md",
+              @media_item.monitored && "btn-success",
+              !@media_item.monitored && "btn-ghost"
+            ]}
           >
-            <.icon name="hero-arrow-path" class="w-5 h-5" /> Re-scan Series
+            <.icon
+              name={if @media_item.monitored, do: "hero-bookmark-solid", else: "hero-bookmark"}
+              class="w-4 h-4 md:w-5 md:h-5"
+            />
+            <span class="hidden sm:inline">
+              {if @media_item.monitored, do: "Monitored", else: "Not Monitored"}
+            </span>
           </button>
-        <% end %>
 
-        <%= if @media_item.type == "movie" && has_media_files?(@media_item) do %>
           <button
             type="button"
-            phx-click="rescan_movie"
-            class="btn btn-ghost btn-block"
-            title="Re-scan movie: discover new files and refresh metadata"
+            phx-click="refresh_metadata"
+            class="btn btn-ghost btn-sm md:btn-md"
+            title="Refresh metadata and episodes from metadata provider"
           >
-            <.icon name="hero-arrow-path" class="w-5 h-5" /> Re-scan
+            <.icon name="hero-arrow-path" class="w-4 h-4 md:w-5 md:h-5" />
+            <span class="hidden sm:inline">Refresh</span>
           </button>
-        <% end %>
 
-        <%= if has_media_files?(@media_item) do %>
-          <button
-            type="button"
-            phx-click="show_rename_modal"
-            class="btn btn-ghost btn-block"
-            title="Rename files to follow naming convention"
-          >
-            <.icon name="hero-pencil-square" class="w-5 h-5" /> Rename Files
-          </button>
-        <% end %>
+          <%= if @media_item.type == "tv_show" && has_media_files?(@media_item) do %>
+            <button
+              type="button"
+              phx-click="rescan_series"
+              class="btn btn-ghost btn-sm md:btn-md"
+              title="Re-scan series: discover new files and refresh metadata for all episodes"
+            >
+              <.icon name="hero-folder-arrow-down" class="w-4 h-4 md:w-5 md:h-5" />
+              <span class="hidden sm:inline">Re-scan</span>
+            </button>
+          <% end %>
+
+          <%= if @media_item.type == "movie" && has_media_files?(@media_item) do %>
+            <button
+              type="button"
+              phx-click="rescan_movie"
+              class="btn btn-ghost btn-sm md:btn-md"
+              title="Re-scan movie: discover new files and refresh metadata"
+            >
+              <.icon name="hero-folder-arrow-down" class="w-4 h-4 md:w-5 md:h-5" />
+              <span class="hidden sm:inline">Re-scan</span>
+            </button>
+          <% end %>
+
+          <%= if has_media_files?(@media_item) do %>
+            <button
+              type="button"
+              phx-click="show_rename_modal"
+              class="btn btn-ghost btn-sm md:btn-md"
+              title="Rename files to follow naming convention"
+            >
+              <.icon name="hero-pencil-square" class="w-4 h-4 md:w-5 md:h-5" />
+              <span class="hidden sm:inline">Rename</span>
+            </button>
+          <% end %>
+        </div>
 
         <div class="divider my-2"></div>
 
-        <%!-- Quality Profile Display --%>
-        <div class="stat bg-base-200 rounded-box p-3">
+        <%!-- Quality Profile Display - compact on mobile --%>
+        <div class="stat bg-base-200 rounded-box p-2 md:p-3">
           <div class="stat-title text-xs">Quality Profile</div>
           <div class="stat-value text-sm">
             <%= if @media_item.quality_profile do %>
@@ -143,21 +152,27 @@ defmodule MydiaWeb.MediaLive.Show.Components do
 
         <div class="divider my-2"></div>
 
-        <button
-          type="button"
-          phx-click="show_edit_modal"
-          class="btn btn-ghost btn-block justify-start"
-        >
-          <.icon name="hero-pencil" class="w-5 h-5" /> Edit Settings
-        </button>
+        <%!-- Edit/Delete actions in row on mobile --%>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            phx-click="show_edit_modal"
+            class="btn btn-ghost btn-sm md:btn-md flex-1 justify-start"
+          >
+            <.icon name="hero-pencil" class="w-4 h-4 md:w-5 md:h-5" />
+            <span class="hidden sm:inline">Edit Settings</span>
+            <span class="sm:hidden">Edit</span>
+          </button>
 
-        <button
-          type="button"
-          phx-click="show_delete_confirm"
-          class="btn btn-error btn-ghost btn-block justify-start"
-        >
-          <.icon name="hero-trash" class="w-5 h-5" /> Delete
-        </button>
+          <button
+            type="button"
+            phx-click="show_delete_confirm"
+            class="btn btn-error btn-ghost btn-sm md:btn-md flex-1 justify-start"
+          >
+            <.icon name="hero-trash" class="w-4 h-4 md:w-5 md:h-5" />
+            <span class="hidden sm:inline">Delete</span>
+          </button>
+        </div>
       </div>
     </div>
     """
@@ -171,10 +186,12 @@ defmodule MydiaWeb.MediaLive.Show.Components do
   def overview_section(assigns) do
     ~H"""
     <%!-- Overview --%>
-    <div class="card bg-base-200 shadow-lg mb-6">
-      <div class="card-body">
-        <h2 class="card-title">Overview</h2>
-        <p class="text-base-content/80 leading-relaxed">{get_overview(@media_item)}</p>
+    <div class="card bg-base-200 shadow-lg mb-4 md:mb-6">
+      <div class="card-body p-4 md:p-6">
+        <h2 class="card-title text-lg md:text-xl">Overview</h2>
+        <p class="text-sm md:text-base text-base-content/80 leading-relaxed">
+          {get_overview(@media_item)}
+        </p>
       </div>
     </div>
 
@@ -182,9 +199,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
     <% cast = get_cast(@media_item)
     crew = get_crew(@media_item) %>
     <%= if cast != [] or crew != [] do %>
-      <div class="card bg-base-200 shadow-lg mb-6">
-        <div class="card-body">
-          <h2 class="card-title mb-4">Cast & Crew</h2>
+      <div class="card bg-base-200 shadow-lg mb-4 md:mb-6">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="card-title text-lg md:text-xl mb-3 md:mb-4">Cast & Crew</h2>
 
           <%= if crew != [] do %>
             <div class="mb-6">
@@ -246,9 +263,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
   def episodes_section(assigns) do
     ~H"""
     <%= if @media_item.type == "tv_show" && length(@media_item.episodes) > 0 do %>
-      <div class="card bg-base-200 shadow-lg mb-6">
-        <div class="card-body">
-          <h2 class="card-title mb-4">Episodes</h2>
+      <div class="card bg-base-200 shadow-lg mb-4 md:mb-6">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="card-title text-lg md:text-xl mb-3 md:mb-4">Episodes</h2>
 
           <% grouped_seasons = group_episodes_by_season(@media_item.episodes) %>
           <%= for {season_num, episodes} <- grouped_seasons do %>
@@ -266,8 +283,8 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                 </span>
               </div>
               <div class="collapse-content">
-                <%!-- Season-level actions --%>
-                <div class="flex gap-1 mb-4 justify-end">
+                <%!-- Season-level actions - scrollable on mobile --%>
+                <div class="flex gap-1 mb-4 justify-end overflow-x-auto pb-2">
                   <div
                     class="tooltip tooltip-bottom"
                     data-tip="Auto search season (prefers season pack)"
@@ -276,13 +293,13 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                       type="button"
                       phx-click="auto_search_season"
                       phx-value-season-number={season_num}
-                      class="btn btn-sm btn-primary"
+                      class="btn btn-xs sm:btn-sm btn-primary"
                       disabled={@auto_searching_season == season_num}
                     >
                       <%= if @auto_searching_season == season_num do %>
                         <span class="loading loading-spinner loading-xs"></span>
                       <% else %>
-                        <.icon name="hero-bolt" class="w-4 h-4" />
+                        <.icon name="hero-bolt" class="w-3 h-3 sm:w-4 sm:h-4" />
                       <% end %>
                     </button>
                   </div>
@@ -291,9 +308,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                       type="button"
                       phx-click="manual_search_season"
                       phx-value-season-number={season_num}
-                      class="btn btn-sm btn-outline"
+                      class="btn btn-xs sm:btn-sm btn-outline"
                     >
-                      <.icon name="hero-magnifying-glass" class="w-4 h-4" />
+                      <.icon name="hero-magnifying-glass" class="w-3 h-3 sm:w-4 sm:h-4" />
                     </button>
                   </div>
                   <div
@@ -304,13 +321,13 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                       type="button"
                       phx-click="rescan_season"
                       phx-value-season-number={season_num}
-                      class="btn btn-sm btn-ghost"
+                      class="btn btn-xs sm:btn-sm btn-ghost"
                       disabled={@rescanning_season == season_num}
                     >
                       <%= if @rescanning_season == season_num do %>
                         <span class="loading loading-spinner loading-xs"></span>
                       <% else %>
-                        <.icon name="hero-arrow-path" class="w-4 h-4" />
+                        <.icon name="hero-arrow-path" class="w-3 h-3 sm:w-4 sm:h-4" />
                       <% end %>
                     </button>
                   </div>
@@ -319,9 +336,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                       type="button"
                       phx-click="monitor_season"
                       phx-value-season-number={season_num}
-                      class="btn btn-sm btn-ghost"
+                      class="btn btn-xs sm:btn-sm btn-ghost"
                     >
-                      <.icon name="hero-bookmark-solid" class="w-4 h-4" />
+                      <.icon name="hero-bookmark-solid" class="w-3 h-3 sm:w-4 sm:h-4" />
                     </button>
                   </div>
                   <div class="tooltip tooltip-bottom" data-tip="Unmonitor all episodes">
@@ -329,9 +346,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                       type="button"
                       phx-click="unmonitor_season"
                       phx-value-season-number={season_num}
-                      class="btn btn-sm btn-ghost"
+                      class="btn btn-xs sm:btn-sm btn-ghost"
                     >
-                      <.icon name="hero-bookmark" class="w-4 h-4" />
+                      <.icon name="hero-bookmark" class="w-3 h-3 sm:w-4 sm:h-4" />
                     </button>
                   </div>
                 </div>
@@ -414,12 +431,12 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                             </div>
                           </td>
                           <td>
-                            <div class="flex gap-1">
+                            <div class="flex gap-0.5 sm:gap-1">
                               <%!-- Play button (if episode has media files) --%>
                               <%= if @playback_enabled && has_files do %>
                                 <.link
                                   navigate={~p"/play/episode/#{episode.id}"}
-                                  class="btn btn-success btn-xs"
+                                  class="btn btn-success btn-xs btn-square"
                                   title="Play episode"
                                 >
                                   <.icon name="hero-play-solid" class="w-3 h-3" />
@@ -429,7 +446,7 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                                 type="button"
                                 phx-click="auto_search_episode"
                                 phx-value-episode-id={episode.id}
-                                class="btn btn-primary btn-xs"
+                                class="btn btn-primary btn-xs btn-square"
                                 disabled={@auto_searching_episode == episode.id}
                                 title="Auto search and download this episode"
                               >
@@ -443,16 +460,16 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                                 type="button"
                                 phx-click="search_episode"
                                 phx-value-episode-id={episode.id}
-                                class="btn btn-ghost btn-xs"
+                                class="btn btn-ghost btn-xs btn-square"
                                 title="Manual search for episode"
                               >
-                                <.icon name="hero-magnifying-glass" class="w-4 h-4" />
+                                <.icon name="hero-magnifying-glass" class="w-3 h-3" />
                               </button>
                               <button
                                 type="button"
                                 phx-click="toggle_episode_monitored"
                                 phx-value-episode-id={episode.id}
-                                class="btn btn-ghost btn-xs"
+                                class="btn btn-ghost btn-xs btn-square"
                                 title={
                                   if episode.monitored,
                                     do: "Stop monitoring",
@@ -465,7 +482,7 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                                       do: "hero-bookmark-solid",
                                       else: "hero-bookmark"
                                   }
-                                  class="w-4 h-4"
+                                  class="w-3 h-3"
                                 />
                               </button>
                             </div>
@@ -589,9 +606,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
   def media_files_section(assigns) do
     ~H"""
     <%= if length(@media_item.media_files) > 0 do %>
-      <div class="card bg-base-200 shadow-lg mb-6">
-        <div class="card-body">
-          <h2 class="card-title mb-4">Media Files</h2>
+      <div class="card bg-base-200 shadow-lg mb-4 md:mb-6">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="card-title text-lg md:text-xl mb-3 md:mb-4">Media Files</h2>
           <%!-- DaisyUI list component --%>
           <ul class="menu bg-base-100 rounded-box p-0">
             <li :for={file <- @media_item.media_files}>
@@ -675,9 +692,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
   def timeline_section(assigns) do
     ~H"""
     <%= if length(@timeline_events) > 0 do %>
-      <div class="card bg-base-200 shadow-lg mb-6">
-        <div class="card-body">
-          <h2 class="card-title mb-4">History</h2>
+      <div class="card bg-base-200 shadow-lg mb-4 md:mb-6">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="card-title text-lg md:text-xl mb-3 md:mb-4">History</h2>
           <%!-- Horizontal scrollable timeline container --%>
           <div class="w-full overflow-x-auto scroll-smooth pb-4 -mx-4 px-4">
             <div class="flex gap-0 min-w-max relative">
@@ -771,9 +788,9 @@ defmodule MydiaWeb.MediaLive.Show.Components do
   def subtitles_section(assigns) do
     ~H"""
     <%= if @subtitle_feature_enabled && length(@media_item.media_files) > 0 do %>
-      <div class="card bg-base-200 shadow-lg mb-6">
-        <div class="card-body">
-          <h2 class="card-title mb-4">Subtitles</h2>
+      <div class="card bg-base-200 shadow-lg mb-4 md:mb-6">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="card-title text-lg md:text-xl mb-3 md:mb-4">Subtitles</h2>
 
           <%!-- Media files with subtitle controls --%>
           <div class="space-y-4">

@@ -1233,8 +1233,14 @@ defmodule MydiaWeb.MediaLive.Show do
   def handle_async(:search, {:ok, {:ok, results}}, socket) do
     start_time = System.monotonic_time(:millisecond)
 
+    media_item = socket.assigns.media_item
+    quality_profile = media_item.quality_profile
+    media_type = get_media_type(media_item)
+
     filtered_results = filter_search_results(results, socket.assigns)
-    sorted_results = sort_search_results(filtered_results, socket.assigns.sort_by)
+
+    sorted_results =
+      sort_search_results(filtered_results, socket.assigns.sort_by, quality_profile, media_type)
 
     duration = System.monotonic_time(:millisecond) - start_time
 
@@ -1249,6 +1255,14 @@ defmodule MydiaWeb.MediaLive.Show do
      |> assign(:searching, false)
      |> assign(:results_empty?, sorted_results == [])
      |> stream(:search_results, sorted_results, reset: true)}
+  end
+
+  defp get_media_type(media_item) do
+    case media_item.type do
+      "movie" -> :movie
+      "tv_show" -> :episode
+      _ -> :movie
+    end
   end
 
   def handle_async(:search, {:ok, {:error, reason}}, socket) do

@@ -12,6 +12,9 @@ defmodule MydiaWeb.AdminConfigLive.Index do
   require Logger
   alias Mydia.Logger, as: MydiaLogger
 
+  # Capture Mix.env at compile time since Mix is not available in releases
+  @env Mix.env()
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -405,6 +408,69 @@ defmodule MydiaWeb.AdminConfigLive.Index do
      socket
      |> assign(:show_import_modal, false)
      |> assign(:import_error, nil)}
+  end
+
+  ## Browse Presets Events
+
+  @impl true
+  def handle_event("show_browse_presets_modal", _params, socket) do
+    alias Mydia.Settings.QualityProfilePresets
+
+    {:noreply,
+     socket
+     |> assign(:show_browse_presets_modal, true)
+     |> assign(:browse_presets_category, :all)
+     |> assign(:browse_presets, QualityProfilePresets.list_presets())}
+  end
+
+  @impl true
+  def handle_event("close_browse_presets_modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_browse_presets_modal, false)
+     |> assign(:browse_presets, [])
+     |> assign(:browse_presets_category, :all)}
+  end
+
+  @impl true
+  def handle_event("filter_presets", %{"category" => category}, socket) do
+    alias Mydia.Settings.QualityProfilePresets
+    category_atom = String.to_existing_atom(category)
+
+    {:noreply,
+     socket
+     |> assign(:browse_presets_category, category_atom)
+     |> assign(:browse_presets, QualityProfilePresets.list_presets_by_category(category_atom))}
+  end
+
+  @impl true
+  def handle_event("import_preset", %{"preset-id" => preset_id}, socket) do
+    alias Mydia.Settings.QualityProfilePresets
+
+    case QualityProfilePresets.get_preset(preset_id) do
+      {:ok, preset} ->
+        # Import the preset as a new quality profile
+        case Settings.create_quality_profile(preset.profile_data) do
+          {:ok, _profile} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Preset \"#{preset.name}\" imported successfully")
+             |> assign(:show_browse_presets_modal, false)
+             |> load_configuration_data()}
+
+          {:error, changeset} ->
+            errors = format_changeset_errors(changeset)
+
+            {:noreply,
+             socket
+             |> put_flash(:error, "Failed to import preset: #{errors}")}
+        end
+
+      {:error, :not_found} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Preset not found")}
+    end
   end
 
   ## Download Client Events
@@ -1655,7 +1721,7 @@ defmodule MydiaWeb.AdminConfigLive.Index do
   defp get_database_health do
     # In test environment, consider the database healthy if a connection exists
     # This avoids issues with SQL sandbox in LiveView processes
-    if Mix.env() == :test do
+    if @env == :test do
       :healthy
     else
       if Repo.checked_out?() or test_db_connection(), do: :healthy, else: :unhealthy
@@ -1704,5 +1770,18 @@ defmodule MydiaWeb.AdminConfigLive.Index do
       minutes > 0 -> "#{minutes}m #{rem(seconds, 60)}s"
       true -> "#{seconds}s"
     end
+  end
+
+  defp format_changeset_errors(changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
+      Enum.reduce(opts, msg, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", to_string(value))
+      end)
+    end)
+    |> Enum.map(fn {field, errors} ->
+      "#{field}: #{Enum.join(errors, ", ")}"
+    end)
+    |> Enum.join("; ")
   end
 end

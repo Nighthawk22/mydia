@@ -533,8 +533,19 @@ defmodule MydiaWeb.MediaLive.Show.Modals do
   attr :quality_filter, :string, default: nil
   attr :min_seeders, :integer, default: 0
   attr :sort_by, :atom, required: true
+  attr :quality_profile, :map, default: nil
 
   def manual_search_modal(assigns) do
+    # Calculate media_type for profile scoring
+    media_type =
+      case assigns.media_item.type do
+        "movie" -> :movie
+        "tv_show" -> :episode
+        _ -> :movie
+      end
+
+    assigns = assign(assigns, :media_type, media_type)
+
     ~H"""
     <div class="modal modal-open">
       <div class="modal-box max-w-7xl h-[90vh] flex flex-col p-0">
@@ -623,7 +634,7 @@ defmodule MydiaWeb.MediaLive.Show.Modals do
                   <form phx-change="sort_search">
                     <select name="sort_by" class="select select-bordered select-sm w-full">
                       <option value="quality" selected={@sort_by == :quality}>
-                        Quality (Best First)
+                        Score (Best First)
                       </option>
                       <option value="seeders" selected={@sort_by == :seeders}>
                         Seeders (Most First)
@@ -682,6 +693,7 @@ defmodule MydiaWeb.MediaLive.Show.Modals do
               >
                 <thead>
                   <tr class="bg-base-300">
+                    <th class="w-16">Score</th>
                     <th class="w-2/5">Release Title</th>
                     <th class="w-1/6">Quality & Size</th>
                     <th class="w-1/6 hidden md:table-cell">Health</th>
@@ -695,6 +707,23 @@ defmodule MydiaWeb.MediaLive.Show.Modals do
                     id={id}
                     class="hover cursor-pointer"
                   >
+                    <%!-- Score Column --%>
+                    <td>
+                      <% score = profile_score(result, @quality_profile, @media_type) %>
+                      <div
+                        class={[
+                          "radial-progress text-xs font-bold",
+                          score >= 80 && "text-success",
+                          score >= 50 && score < 80 && "text-warning",
+                          score < 50 && "text-error"
+                        ]}
+                        style={"--value:#{trunc(score)}; --size:2.5rem;"}
+                        role="progressbar"
+                        title={"Profile Score: #{Float.round(score, 1)}"}
+                      >
+                        {trunc(score)}
+                      </div>
+                    </td>
                     <%!-- Title Column --%>
                     <td>
                       <div class="flex flex-col">

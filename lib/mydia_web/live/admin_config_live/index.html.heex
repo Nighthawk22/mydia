@@ -107,6 +107,13 @@
     <%= if assigns[:show_import_modal] do %>
       <Components.import_modal import_error={assigns[:import_error]} />
     <% end %>
+    <%!-- Browse Presets Modal --%>
+    <%= if assigns[:show_browse_presets_modal] do %>
+      <Components.browse_presets_modal
+        presets={@browse_presets}
+        selected_category={@browse_presets_category}
+      />
+    <% end %>
     <%!-- Download Client Modal --%>
     <%= if assigns[:show_download_client_modal] do %>
       <Components.download_client_modal

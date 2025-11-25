@@ -180,6 +180,31 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
     EpisodeStatus.status_details(episode)
   end
 
+  @doc """
+  Returns an enhanced tooltip for episode status that includes filenames for quick reference.
+  """
+  def episode_status_tooltip(episode) do
+    base_status = EpisodeStatus.status_details(episode)
+
+    case episode.media_files do
+      [_ | _] = files ->
+        filenames =
+          files
+          |> Enum.map(fn file ->
+            absolute_path = Mydia.Library.MediaFile.absolute_path(file)
+            basename = Path.basename(absolute_path)
+            resolution = file.resolution || "?"
+            "• #{basename} (#{resolution})"
+          end)
+          |> Enum.join("\n")
+
+        "#{base_status}\n\nFiles:\n#{filenames}"
+
+      _ ->
+        base_status
+    end
+  end
+
   def get_download_status(downloads_with_status) do
     active_downloads =
       downloads_with_status

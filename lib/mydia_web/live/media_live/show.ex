@@ -98,6 +98,8 @@ defmodule MydiaWeb.MediaLive.Show do
      |> assign(:renaming_files, false)
      # Season expanded/collapsed state
      |> assign(:expanded_seasons, expanded_seasons)
+     # Episode expanded/collapsed state (for showing file details)
+     |> assign(:expanded_episodes, MapSet.new())
      # Next episode for TV shows
      |> assign(:next_episode, next_episode)
      |> assign(:next_episode_state, next_episode_state)
@@ -583,6 +585,19 @@ defmodule MydiaWeb.MediaLive.Show do
     {:noreply, assign(socket, :expanded_seasons, updated_seasons)}
   end
 
+  def handle_event("toggle_episode_expanded", %{"episode-id" => episode_id}, socket) do
+    expanded_episodes = socket.assigns.expanded_episodes
+
+    updated_episodes =
+      if MapSet.member?(expanded_episodes, episode_id) do
+        MapSet.delete(expanded_episodes, episode_id)
+      else
+        MapSet.put(expanded_episodes, episode_id)
+      end
+
+    {:noreply, assign(socket, :expanded_episodes, updated_episodes)}
+  end
+
   def handle_event("search_episode", %{"episode-id" => episode_id}, socket) do
     episode = Media.get_episode!(episode_id, preload: [:media_item])
     media_item = episode.media_item
@@ -681,7 +696,7 @@ defmodule MydiaWeb.MediaLive.Show do
   end
 
   def handle_event("show_file_delete_confirm", %{"file-id" => file_id}, socket) do
-    file = Library.get_media_file!(file_id)
+    file = Library.get_media_file!(file_id, preload: :library_path)
 
     {:noreply,
      socket

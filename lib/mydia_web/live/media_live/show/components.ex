@@ -237,6 +237,7 @@ defmodule MydiaWeb.MediaLive.Show.Components do
   """
   attr :media_item, :map, required: true
   attr :expanded_seasons, :map, required: true
+  attr :expanded_episodes, :map, default: MapSet.new()
   attr :auto_searching_season, :any, default: nil
   attr :rescanning_season, :any, default: nil
   attr :auto_searching_episode, :any, default: nil
@@ -347,95 +348,142 @@ defmodule MydiaWeb.MediaLive.Show.Components do
                       </tr>
                     </thead>
                     <tbody>
-                      <tr :for={episode <- Enum.sort_by(episodes, & &1.episode_number, :desc)}>
-                        <td class="font-mono text-base-content/70">
-                          {episode.episode_number}
-                        </td>
-                        <td>
-                          <div class="font-medium">{episode.title || "TBA"}</div>
-                        </td>
-                        <td class="hidden md:table-cell text-sm">
-                          {format_date(episode.air_date)}
-                        </td>
-                        <td class="hidden lg:table-cell">
-                          <%= if quality = get_episode_quality_badge(episode) do %>
-                            <span class="badge badge-primary badge-sm">{quality}</span>
-                          <% else %>
-                            <span class="text-base-content/50">—</span>
-                          <% end %>
-                        </td>
-                        <td>
-                          <% status = get_episode_status(episode) %>
-                          <div
-                            class="tooltip tooltip-left"
-                            data-tip={episode_status_details(episode)}
-                          >
-                            <span class={[
-                              "badge badge-sm",
-                              episode_status_color(status)
-                            ]}>
-                              <.icon name={episode_status_icon(status)} class="w-4 h-4" />
-                            </span>
-                          </div>
-                        </td>
-                        <td>
-                          <div class="flex gap-1">
-                            <%!-- Play button (if episode has media files) --%>
-                            <%= if @playback_enabled && length(episode.media_files) > 0 do %>
-                              <.link
-                                navigate={~p"/play/episode/#{episode.id}"}
-                                class="btn btn-success btn-xs"
-                                title="Play episode"
-                              >
-                                <.icon name="hero-play-solid" class="w-3 h-3" />
-                              </.link>
-                            <% end %>
-                            <button
-                              type="button"
-                              phx-click="auto_search_episode"
+                      <%= for episode <- Enum.sort_by(episodes, & &1.episode_number, :desc) do %>
+                        <% has_files = length(episode.media_files) > 0
+                        is_expanded = MapSet.member?(@expanded_episodes, episode.id) %>
+                        <tr>
+                          <td class="font-mono text-base-content/70">
+                            <div
+                              class={[
+                                "flex items-center gap-1",
+                                has_files && "cursor-pointer hover:text-primary"
+                              ]}
+                              phx-click={has_files && "toggle_episode_expanded"}
                               phx-value-episode-id={episode.id}
-                              class="btn btn-primary btn-xs"
-                              disabled={@auto_searching_episode == episode.id}
-                              title="Auto search and download this episode"
+                              title={has_files && "Click to expand/collapse file details"}
                             >
-                              <%= if @auto_searching_episode == episode.id do %>
-                                <span class="loading loading-spinner loading-xs"></span>
+                              <%= if has_files do %>
+                                <.icon
+                                  name={
+                                    if is_expanded,
+                                      do: "hero-chevron-down",
+                                      else: "hero-chevron-right"
+                                  }
+                                  class="w-4 h-4 text-base-content/50"
+                                />
                               <% else %>
-                                <.icon name="hero-bolt" class="w-3 h-3" />
+                                <span class="w-4"></span>
                               <% end %>
-                            </button>
-                            <button
-                              type="button"
-                              phx-click="search_episode"
+                              {episode.episode_number}
+                            </div>
+                          </td>
+                          <td>
+                            <div
+                              class={[
+                                "font-medium",
+                                has_files && "cursor-pointer hover:text-primary"
+                              ]}
+                              phx-click={has_files && "toggle_episode_expanded"}
                               phx-value-episode-id={episode.id}
-                              class="btn btn-ghost btn-xs"
-                              title="Manual search for episode"
                             >
-                              <.icon name="hero-magnifying-glass" class="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              phx-click="toggle_episode_monitored"
-                              phx-value-episode-id={episode.id}
-                              class="btn btn-ghost btn-xs"
-                              title={
-                                if episode.monitored,
-                                  do: "Stop monitoring",
-                                  else: "Start monitoring"
-                              }
+                              {episode.title || "TBA"}
+                            </div>
+                          </td>
+                          <td class="hidden md:table-cell text-sm">
+                            {format_date(episode.air_date)}
+                          </td>
+                          <td class="hidden lg:table-cell">
+                            <%= if quality = get_episode_quality_badge(episode) do %>
+                              <span class="badge badge-primary badge-sm">{quality}</span>
+                            <% else %>
+                              <span class="text-base-content/50">—</span>
+                            <% end %>
+                          </td>
+                          <td>
+                            <% status = get_episode_status(episode) %>
+                            <div
+                              class="tooltip tooltip-left"
+                              data-tip={episode_status_tooltip(episode)}
                             >
-                              <.icon
-                                name={
+                              <span class={[
+                                "badge badge-sm",
+                                episode_status_color(status)
+                              ]}>
+                                <.icon name={episode_status_icon(status)} class="w-4 h-4" />
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <div class="flex gap-1">
+                              <%!-- Play button (if episode has media files) --%>
+                              <%= if @playback_enabled && has_files do %>
+                                <.link
+                                  navigate={~p"/play/episode/#{episode.id}"}
+                                  class="btn btn-success btn-xs"
+                                  title="Play episode"
+                                >
+                                  <.icon name="hero-play-solid" class="w-3 h-3" />
+                                </.link>
+                              <% end %>
+                              <button
+                                type="button"
+                                phx-click="auto_search_episode"
+                                phx-value-episode-id={episode.id}
+                                class="btn btn-primary btn-xs"
+                                disabled={@auto_searching_episode == episode.id}
+                                title="Auto search and download this episode"
+                              >
+                                <%= if @auto_searching_episode == episode.id do %>
+                                  <span class="loading loading-spinner loading-xs"></span>
+                                <% else %>
+                                  <.icon name="hero-bolt" class="w-3 h-3" />
+                                <% end %>
+                              </button>
+                              <button
+                                type="button"
+                                phx-click="search_episode"
+                                phx-value-episode-id={episode.id}
+                                class="btn btn-ghost btn-xs"
+                                title="Manual search for episode"
+                              >
+                                <.icon name="hero-magnifying-glass" class="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                phx-click="toggle_episode_monitored"
+                                phx-value-episode-id={episode.id}
+                                class="btn btn-ghost btn-xs"
+                                title={
                                   if episode.monitored,
-                                    do: "hero-bookmark-solid",
-                                    else: "hero-bookmark"
+                                    do: "Stop monitoring",
+                                    else: "Start monitoring"
                                 }
-                                class="w-4 h-4"
+                              >
+                                <.icon
+                                  name={
+                                    if episode.monitored,
+                                      do: "hero-bookmark-solid",
+                                      else: "hero-bookmark"
+                                  }
+                                  class="w-4 h-4"
+                                />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        <%!-- Expanded file details row --%>
+                        <%= if is_expanded && has_files do %>
+                          <tr :for={file <- episode.media_files} class="bg-base-300/30">
+                            <td colspan="6" class="py-2 pl-10">
+                              <.episode_file_row
+                                file={file}
+                                episode={episode}
+                                playback_enabled={@playback_enabled}
                               />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                            </td>
+                          </tr>
+                        <% end %>
+                      <% end %>
                     </tbody>
                   </table>
                 </div>
@@ -445,6 +493,68 @@ defmodule MydiaWeb.MediaLive.Show.Components do
         </div>
       </div>
     <% end %>
+    """
+  end
+
+  @doc """
+  Renders a single media file row within an expanded episode.
+  """
+  attr :file, :map, required: true
+  attr :episode, :map, required: true
+  attr :playback_enabled, :boolean, required: true
+
+  def episode_file_row(assigns) do
+    ~H"""
+    <div class="flex items-center justify-between gap-4 py-1">
+      <%!-- File info --%>
+      <div class="flex items-center gap-3 min-w-0 flex-1">
+        <.icon name="hero-document" class="w-4 h-4 text-base-content/50 flex-shrink-0" />
+        <% absolute_path = Mydia.Library.MediaFile.absolute_path(@file) %>
+        <span class="font-mono text-sm truncate" title={absolute_path}>
+          {Path.basename(absolute_path)}
+        </span>
+        <span class="badge badge-primary badge-sm">{@file.resolution || "?"}</span>
+        <%= if @file.codec do %>
+          <span class="badge badge-outline badge-xs">{@file.codec}</span>
+        <% end %>
+        <%= if @file.audio_codec do %>
+          <span class="badge badge-outline badge-xs">{@file.audio_codec}</span>
+        <% end %>
+        <span class="text-xs text-base-content/60">
+          {format_file_size(@file.size)}
+        </span>
+      </div>
+      <%!-- File actions --%>
+      <div class="flex items-center gap-1 flex-shrink-0">
+        <%= if @playback_enabled do %>
+          <.link
+            navigate={~p"/play/episode/#{@episode.id}?file_id=#{@file.id}"}
+            class="btn btn-ghost btn-xs btn-square"
+            title="Play this file"
+          >
+            <.icon name="hero-play-solid" class="w-4 h-4" />
+          </.link>
+        <% end %>
+        <button
+          type="button"
+          phx-click="mark_file_preferred"
+          phx-value-file-id={@file.id}
+          class="btn btn-ghost btn-xs btn-square"
+          title="Mark as preferred"
+        >
+          <.icon name="hero-star" class="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          phx-click="show_file_delete_confirm"
+          phx-value-file-id={@file.id}
+          class="btn btn-ghost btn-xs btn-square text-error hover:bg-error hover:text-error-content"
+          title="Delete file"
+        >
+          <.icon name="hero-trash" class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
     """
   end
 

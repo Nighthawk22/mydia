@@ -996,9 +996,20 @@ defmodule Mydia.Downloads do
 
             {:ok, {:file, body, detected_type}}
 
-          {:ok, %{status: status}} ->
-            Logger.error("Failed to download torrent file: HTTP #{status}")
-            {:error, {:download_failed, "HTTP #{status}"}}
+          {:ok, %{status: status, body: body}} ->
+            # Log the response body for debugging - it often contains error details
+            body_preview =
+              if is_binary(body) and byte_size(body) > 0 do
+                String.slice(to_string(body), 0, 1000)
+              else
+                "(empty body)"
+              end
+
+            Logger.error(
+              "Failed to download torrent file: HTTP #{status}, response: #{body_preview}"
+            )
+
+            {:error, {:download_failed, "HTTP #{status}: #{body_preview}"}}
 
           {:error, exception} ->
             Logger.error("Failed to download torrent file: #{inspect(exception)}")
@@ -1058,7 +1069,22 @@ defmodule Mydia.Downloads do
         # HEAD not allowed, try GET as fallback
         follow_to_final_url_with_get(url, redirects_remaining)
 
+      {:ok, %{status: status, body: body}} ->
+        body_preview =
+          if is_binary(body) and byte_size(body) > 0 do
+            String.slice(to_string(body), 0, 500)
+          else
+            "(empty body)"
+          end
+
+        Logger.error(
+          "Unexpected HTTP status #{status} during redirect check for URL: #{url}, response: #{body_preview}"
+        )
+
+        {:error, {:unexpected_status, status}}
+
       {:ok, %{status: status}} ->
+        Logger.error("Unexpected HTTP status #{status} during redirect check for URL: #{url}")
         {:error, {:unexpected_status, status}}
 
       {:error, exception} ->
@@ -1090,7 +1116,23 @@ defmodule Mydia.Downloads do
         # No redirect, this is the final URL
         {:ok, {:http, url}}
 
+      {:ok, %{status: status, body: body}} ->
+        body_preview =
+          if is_binary(body) and byte_size(body) > 0 do
+            String.slice(to_string(body), 0, 500)
+          else
+            "(empty body)"
+          end
+
+        Logger.error(
+          "Unexpected HTTP status #{status} during GET redirect check for URL: #{url}, response: #{body_preview}"
+        )
+
+        {:error, {:unexpected_status, status}}
+
       {:ok, %{status: status}} ->
+        Logger.error("Unexpected HTTP status #{status} during GET redirect check for URL: #{url}")
+
         {:error, {:unexpected_status, status}}
 
       {:error, exception} ->

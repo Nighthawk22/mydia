@@ -70,7 +70,7 @@ defmodule Mydia.Jobs do
 
     query =
       if worker do
-        from j in query, where: j.worker == ^to_string(worker)
+        from j in query, where: j.worker == ^inspect(worker)
       else
         query
       end
@@ -90,7 +90,7 @@ defmodule Mydia.Jobs do
   """
   def get_latest_job(worker) do
     from(j in Job,
-      where: j.worker == ^to_string(worker),
+      where: j.worker == ^inspect(worker),
       order_by: [desc: j.attempted_at],
       limit: 1
     )
@@ -108,7 +108,7 @@ defmodule Mydia.Jobs do
   - avg_duration_ms: average execution time in milliseconds
   """
   def get_job_stats(worker) do
-    worker_string = to_string(worker)
+    worker_string = inspect(worker)
 
     # Get counts by state
     counts =
@@ -177,7 +177,7 @@ defmodule Mydia.Jobs do
 
     query =
       if worker do
-        from j in query, where: j.worker == ^to_string(worker)
+        from j in query, where: j.worker == ^inspect(worker)
       else
         query
       end

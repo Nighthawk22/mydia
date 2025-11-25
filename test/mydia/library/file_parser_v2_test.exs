@@ -1283,6 +1283,142 @@ defmodule Mydia.Library.FileParser.V2Test do
     end
   end
 
+  describe "parse_with_path/2 - folder-based parsing (task-265)" do
+    test "low confidence when movie file is in TV folder structure" do
+      # Playdate 2025 is a movie file misplaced in Bluey TV folder
+      # Folder structure is used, but confidence should be very low due to:
+      # - No episode markers (-0.15)
+      # - Parsed as movie (-0.20)
+      # - Title mismatch (-0.20)
+      result = FileParser.parse_with_path("/media/tv/Bluey/Season 03/Playdate 2025 2160p.mkv")
+
+      # Still returns TV show interpretation (folder is authoritative)
+      assert result.type == :tv_show
+      assert result.title == "Bluey"
+      assert result.season == 3
+      assert result.episodes == []
+      # But confidence should be very low due to conflicts
+      assert result.confidence < 0.20,
+             "Confidence should be very low for movie in TV folder, got: #{result.confidence}"
+    end
+
+    test "moderate-high confidence when filename has episode markers and different title" do
+      # File has episode markers (S02E01), so confidence should be moderate-high
+      # despite title mismatch - the TV structure is clear
+      result =
+        FileParser.parse_with_path("/media/tv/Bluey/Season 02/Naruto Gaiden 1A S02E01 720p.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Bluey"
+      assert result.season == 2
+      assert result.episodes == [1]
+      # Has episode markers (+0.20), TV type (+0.15), season match (+0.10),
+      # title mismatch (-0.10), quality (+0.02) = ~0.87 confidence
+      # This is reasonable - the file clearly IS a TV episode even if titled differently
+      assert result.confidence >= 0.75 && result.confidence < 0.95
+    end
+
+    test "uses folder name but preserves episode from filename" do
+      result =
+        FileParser.parse_with_path(
+          "/media/tv/One-Punch Man/Season 03/One-Punch.Man.S03E04.1080p.mkv"
+        )
+
+      assert result.type == :tv_show
+      assert result.title == "One-Punch Man"
+      assert result.season == 3
+      assert result.episodes == [4]
+      assert result.quality.resolution == "1080p"
+    end
+
+    test "uses folder name with year in filename causing issues" do
+      result =
+        FileParser.parse_with_path(
+          "/media/tv/Robin Hood/Season 01/Robin.Hood.2025.S01E01.720p.mkv"
+        )
+
+      assert result.type == :tv_show
+      assert result.title == "Robin Hood"
+      assert result.season == 1
+      assert result.episodes == [1]
+      # Year is preserved from filename
+      assert result.year == 2025
+    end
+
+    test "falls back to filename parsing when no TV structure" do
+      result = FileParser.parse_with_path("/downloads/The.Mandalorian.S02E05.1080p.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "The Mandalorian"
+      assert result.season == 2
+      assert result.episodes == [5]
+    end
+
+    test "falls back for movies in non-TV paths" do
+      result = FileParser.parse_with_path("/downloads/Inception.2010.1080p.BluRay.mkv")
+
+      assert result.type == :movie
+      assert result.title == "Inception"
+      assert result.year == 2010
+    end
+
+    test "higher confidence when folder matches filename season" do
+      result =
+        FileParser.parse_with_path("/media/tv/Show Name/Season 02/Show.Name.S02E05.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Show Name"
+      assert result.season == 2
+      assert result.episodes == [5]
+      # Higher confidence when folder and filename seasons match
+      assert result.confidence >= 0.90
+    end
+
+    test "handles Specials folder as season 0" do
+      result =
+        FileParser.parse_with_path("/media/tv/Doctor Who/Specials/Christmas.Special.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Doctor Who"
+      assert result.season == 0
+    end
+
+    test "handles S01 folder format" do
+      result = FileParser.parse_with_path("/media/tv/Show Name/S01/episode.S01E05.mkv")
+
+      assert result.type == :tv_show
+      assert result.title == "Show Name"
+      assert result.season == 1
+      assert result.episodes == [5]
+    end
+
+    test "preserves quality info from filename" do
+      result =
+        FileParser.parse_with_path(
+          "/media/tv/The Office/Season 02/The.Office.S02E05.1080p.BluRay.x264-GROUP.mkv"
+        )
+
+      assert result.type == :tv_show
+      assert result.title == "The Office"
+      assert result.quality.resolution == "1080p"
+      assert result.quality.source == "BluRay"
+      assert result.quality.codec == "x264"
+      assert result.release_group == "GROUP"
+    end
+
+    test "Severance example from task-265" do
+      result =
+        FileParser.parse_with_path(
+          "/media/tv/Severance/Season 01/Severance.S01E08.Whats.for.Dinner.2160p.mkv"
+        )
+
+      assert result.type == :tv_show
+      assert result.title == "Severance"
+      assert result.season == 1
+      assert result.episodes == [8]
+    end
+  end
+
   describe "Problematic filenames from task-250" do
     test "parses Predator Badlands movie with multi-language brackets - task-250.1" do
       result =

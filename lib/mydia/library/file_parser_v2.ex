@@ -191,6 +191,193 @@ defmodule Mydia.Library.FileParser.V2 do
     result
   end
 
+  @doc """
+  Parses a full file path, using folder structure to enhance matching accuracy.
+
+  When a file is in a structured TV library path like `/media/tv/{Show Name}/Season {XX}/`,
+  the folder structure is used to identify the show. However, the confidence score
+  reflects how well the filename agrees with the folder structure interpretation.
+
+  ## Confidence Algorithm
+
+  Confidence measures agreement between folder structure and filename signals:
+  - High confidence: filename has episode markers, parsed as TV, title matches folder
+  - Low confidence: filename looks like a movie, no episode markers, title differs
+
+  This allows downstream code to filter or flag low-confidence results without
+  special-case logic in the parser.
+
+  ## Examples
+
+      # Good match: filename agrees with folder structure
+      iex> FileParser.V2.parse_with_path("/media/tv/One-Punch Man/Season 03/One-Punch.Man.S03E04.mkv")
+      %{
+        type: :tv_show,
+        title: "One-Punch Man",
+        season: 3,
+        episodes: [4],
+        confidence: 0.97   # High - all signals agree
+      }
+
+      # Poor match: filename looks like a movie in TV folder
+      iex> FileParser.V2.parse_with_path("/media/tv/Bluey/Season 03/Playdate 2025 2160p.mkv")
+      %{
+        type: :tv_show,
+        title: "Bluey",     # From folder
+        season: 3,
+        episodes: [],
+        confidence: 0.07   # Very low - signals conflict
+      }
+  """
+  @spec parse_with_path(String.t(), keyword()) :: parse_result()
+  def parse_with_path(file_path, opts \\ []) when is_binary(file_path) do
+    # First, parse the filename normally
+    filename = Path.basename(file_path)
+    filename_result = parse(filename, opts)
+
+    # Try to extract folder structure info
+    alias Mydia.Library.PathParser
+
+    case PathParser.extract_from_path(file_path) do
+      %{show_name: show_name, season: folder_season} ->
+        # Folder structure found - use it but calculate confidence based on agreement
+        Logger.debug("Using folder structure for parsing",
+          path: file_path,
+          folder_show_name: show_name,
+          folder_season: folder_season,
+          filename_title: filename_result.title,
+          filename_season: filename_result.season,
+          filename_type: filename_result.type
+        )
+
+        # Calculate confidence based on how well filename agrees with folder interpretation
+        confidence =
+          calculate_folder_enhanced_confidence(filename_result, show_name, folder_season)
+
+        # The folder structure indicates this is a TV show
+        # Use folder's show name (authoritative) but keep episode info from filename
+        %ParsedFileInfo{
+          type: :tv_show,
+          title: show_name,
+          year: filename_result.year,
+          # Prefer folder season, but fall back to filename season if folder doesn't specify
+          season: folder_season || filename_result.season,
+          episodes: filename_result.episodes || [],
+          quality: filename_result.quality,
+          release_group: filename_result.release_group,
+          confidence: confidence,
+          original_filename: filename
+        }
+
+      nil ->
+        # No folder structure found - return filename-based result as-is
+        filename_result
+    end
+  end
+
+  # Calculate confidence when folder structure is used.
+  # Measures agreement between folder interpretation and filename signals.
+  #
+  # High confidence when:
+  # - Filename has episode markers (S01E01, 1x01, etc.)
+  # - Filename parsed as TV show
+  # - Filename title similar to folder name
+  # - Filename season matches folder season
+  #
+  # Low confidence when:
+  # - No episode markers in filename
+  # - Filename parsed as movie
+  # - Filename title completely different from folder
+  defp calculate_folder_enhanced_confidence(filename_result, show_name, folder_season) do
+    # Start with moderate base - folder structure alone is not definitive
+    base = 0.50
+
+    # Factor 1: Does filename have episode markers? (Most important for TV)
+    episode_factor =
+      if filename_result.episodes != nil && filename_result.episodes != [] do
+        0.20
+      else
+        # Missing episodes is suspicious for a file in a TV folder
+        -0.15
+      end
+
+    # Factor 2: Was filename parsed as a TV show?
+    type_factor =
+      case filename_result.type do
+        :tv_show -> 0.15
+        # Filename thinks it's a movie - significant conflict
+        :movie -> -0.20
+        :unknown -> -0.05
+      end
+
+    # Factor 3: Do the seasons match?
+    season_factor =
+      cond do
+        # No season in filename - neutral (common for some releases)
+        filename_result.season == nil -> 0.0
+        # Seasons match - good agreement
+        filename_result.season == folder_season -> 0.10
+        # Seasons conflict - concerning
+        true -> -0.10
+      end
+
+    # Factor 4: Title similarity between folder and filename
+    title_factor =
+      if filename_result.title do
+        similarity = simple_title_similarity(show_name, filename_result.title)
+
+        cond do
+          # Strong match (e.g., "One-Punch Man" vs "One Punch Man")
+          similarity >= 0.8 -> 0.15
+          # Moderate match
+          similarity >= 0.5 -> 0.0
+          # Weak match
+          similarity >= 0.3 -> -0.10
+          # Poor/no match (e.g., "Bluey" vs "Playdate")
+          true -> -0.20
+        end
+      else
+        0.0
+      end
+
+    # Factor 5: Quality info (minor positive signal)
+    quality_factor =
+      if filename_result.quality && filename_result.quality.resolution != nil do
+        0.02
+      else
+        0.0
+      end
+
+    # Sum it all up and clamp to valid range
+    confidence =
+      base + episode_factor + type_factor + season_factor + title_factor + quality_factor
+
+    min(max(confidence, 0.0), 1.0)
+  end
+
+  # Simple title similarity using Jaro distance after normalization
+  defp simple_title_similarity(title1, title2) when is_binary(title1) and is_binary(title2) do
+    norm1 = normalize_for_comparison(title1)
+    norm2 = normalize_for_comparison(title2)
+
+    cond do
+      norm1 == norm2 -> 1.0
+      String.contains?(norm1, norm2) || String.contains?(norm2, norm1) -> 0.85
+      true -> String.jaro_distance(norm1, norm2)
+    end
+  end
+
+  defp simple_title_similarity(_title1, _title2), do: 0.0
+
+  # Normalize title for comparison: lowercase, remove punctuation, normalize whitespace
+  defp normalize_for_comparison(title) do
+    title
+    |> String.downcase()
+    |> String.replace(~r/[-_.':]/, " ")
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
+  end
+
   ## Sequential Extraction
 
   # Define extraction patterns as a function to avoid module attribute issues

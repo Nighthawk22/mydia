@@ -6,6 +6,9 @@
 
 A modern, self-hosted media management platform for tracking, organizing, and monitoring your media library.
 
+> [!WARNING]
+> Mydia is still in version 0.x.x and is subject to major changes from version to version. Feedback is welcome! Expect bugs and please open [issues](https://github.com/getmydia/mydia/issues) or [feature requests](https://github.com/getmydia/mydia/issues/new).
+
 ## ✨ Features
 
 - 📺 **Unified Media Management** – Track both movies and TV shows with rich metadata from TMDB/TVDB

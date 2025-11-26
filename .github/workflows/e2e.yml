@@ -1,4 +1,4 @@
-name: E2E Tests
+name: Feature Tests
 
 on:
   workflow_dispatch: # Allow manual triggering
@@ -7,78 +7,72 @@ on:
       - master
       - main
     paths:
-      - "assets/**"
       - "lib/**"
-      - "test/e2e/**"
-      - "compose.e2e.yml"
-      - "compose.test.yml"
+      - "test/mydia_web/features/**"
+      - "test/support/feature_case.ex"
       - ".github/workflows/e2e.yml"
   pull_request:
     paths:
-      - "assets/**"
       - "lib/**"
-      - "test/e2e/**"
-      - "compose.e2e.yml"
-      - "compose.test.yml"
+      - "test/mydia_web/features/**"
+      - "test/support/feature_case.ex"
       - ".github/workflows/e2e.yml"
 
 env:
   MIX_ENV: test
+  ELIXIR_VERSION: "1.17"
+  OTP_VERSION: "27"
 
 jobs:
-  e2e-tests:
-    name: Playwright E2E Tests
+  feature-tests:
+    name: Wallaby Browser Tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build test Docker image
-        run: docker build -t mydia:test .
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Start test environment
-        run: docker compose -f compose.test.yml up -d app mock-oauth2
-
-      - name: Wait for application to be healthy
+      - name: Install Chrome and chromedriver
         run: |
-          timeout 60 bash -c 'until docker compose -f compose.test.yml exec app curl -f http://localhost:4000/health > /dev/null 2>&1; do sleep 2; done'
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser chromium-chromedriver
+          # Add chromedriver to PATH
+          echo "/usr/lib/chromium-browser/" >> $GITHUB_PATH
 
-      - name: Seed test users
-        run: |
-          docker compose -f compose.test.yml exec app /app/bin/mydia rpc '
-          case Mydia.Accounts.get_user_by_username("admin") do
-            nil -> Mydia.Accounts.create_user(%{username: "admin", email: "admin@localhost", password: "adminpass", role: "admin", display_name: "Administrator"})
-            user -> Mydia.Accounts.update_user(user, %{email: "admin@localhost", password: "adminpass"})
-          end
-          case Mydia.Accounts.get_user_by_username("testuser") do
-            nil -> Mydia.Accounts.create_user(%{username: "testuser", email: "testuser@example.com", password: "testpass", role: "user", display_name: "Test User"})
-            user -> Mydia.Accounts.update_user(user, %{email: "testuser@example.com", password: "testpass"})
-          end
-          '
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
-      - name: Install Playwright dependencies
-        run: docker compose -f compose.test.yml run --rm playwright sh -c "npm install"
+      - name: Install dependencies
+        run: mix deps.get
 
-      - name: Run E2E tests
-        run: docker compose -f compose.test.yml run --rm playwright npm run test:e2e
+      - name: Compile code
+        run: mix compile
 
-      - name: Upload test results
-        if: always()
+      - name: Setup test database
+        run: mix ecto.create && mix ecto.migrate
+
+      - name: Run feature tests
+        run: mix test --only feature
+        env:
+          CHROMEDRIVER_PATH: /usr/lib/chromium-browser/chromedriver
+
+      - name: Upload screenshots on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results
-          path: assets/test-results/
+          name: wallaby-screenshots
+          path: tmp/wallaby_screenshots/
           retention-days: 7
-
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: assets/playwright-report/
-          retention-days: 7
-
-      - name: Stop test environment
-        if: always()
-        run: docker compose -f compose.test.yml down -v

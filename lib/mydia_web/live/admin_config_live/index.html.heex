@@ -169,7 +169,12 @@
     <% end %>
     <%!-- Library Indexer Config Modal --%>
     <%= if assigns[:show_library_config_modal] and assigns[:configuring_library_indexer] do %>
-      <Components.library_config_modal configuring_library_indexer={@configuring_library_indexer} />
+      <Components.library_config_modal
+        configuring_library_indexer={@configuring_library_indexer}
+        settings={@library_indexer_settings}
+        testing={assigns[:library_config_testing] || false}
+        test_result={assigns[:library_config_test_result]}
+      />
     <% end %>
     <%!-- Library Path Modal --%>
     <%= if assigns[:show_library_path_modal] do %>

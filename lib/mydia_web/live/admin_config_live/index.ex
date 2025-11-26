@@ -106,6 +106,28 @@ defmodule MydiaWeb.AdminConfigLive.Index do
   end
 
   @impl true
+  def handle_info({:library_config_test_complete, result}, socket) do
+    test_result =
+      case result do
+        {:ok, test_result} ->
+          test_result
+
+        {:error, reason} ->
+          %{
+            success: false,
+            message: "Test failed",
+            error: inspect(reason),
+            response_time_ms: nil
+          }
+      end
+
+    {:noreply,
+     socket
+     |> assign(:library_config_testing, false)
+     |> assign(:library_config_test_result, test_result)}
+  end
+
+  @impl true
   def handle_event("change_tab", %{"tab" => tab}, socket) do
     {:noreply, push_patch(socket, to: ~p"/admin/config?tab=#{tab}")}
   end
@@ -1308,12 +1330,22 @@ defmodule MydiaWeb.AdminConfigLive.Index do
 
   @impl true
   def handle_event("configure_library_indexer", %{"id" => id}, socket) do
+    alias Mydia.Indexers.CardigannParser
+
     definition = Indexers.get_cardigann_definition!(id)
+
+    # Parse the definition to get the settings
+    settings =
+      case CardigannParser.parse_definition(definition.definition) do
+        {:ok, parsed} -> parsed.settings || []
+        {:error, _} -> []
+      end
 
     {:noreply,
      socket
      |> assign(:show_library_config_modal, true)
-     |> assign(:configuring_library_indexer, definition)}
+     |> assign(:configuring_library_indexer, definition)
+     |> assign(:library_indexer_settings, settings)}
   end
 
   @impl true
@@ -1321,9 +1353,89 @@ defmodule MydiaWeb.AdminConfigLive.Index do
     {:noreply,
      socket
      |> assign(:show_library_config_modal, false)
-     |> assign(:configuring_library_indexer, nil)}
+     |> assign(:configuring_library_indexer, nil)
+     |> assign(:library_indexer_settings, [])
+     |> assign(:library_config_testing, false)
+     |> assign(:library_config_test_result, nil)}
   end
 
+  @impl true
+  def handle_event(
+        "save_library_indexer_config",
+        %{"config" => config_params, "action" => "test"},
+        socket
+      ) do
+    definition = socket.assigns.configuring_library_indexer
+
+    # First save the config, then test
+    case Indexers.configure_cardigann_definition(definition, config_params) do
+      {:ok, updated_definition} ->
+        # Start testing
+        socket =
+          socket
+          |> assign(:library_config_testing, true)
+          |> assign(:library_config_test_result, nil)
+          |> assign(:configuring_library_indexer, updated_definition)
+
+        # Run test in background and send result back
+        parent = self()
+        definition_id = updated_definition.id
+
+        Task.start(fn ->
+          result = Indexers.test_cardigann_connection(definition_id)
+          send(parent, {:library_config_test_complete, result})
+        end)
+
+        {:noreply, socket}
+
+      {:error, changeset} ->
+        MydiaLogger.log_error(:liveview, "Failed to save config before test",
+          error: changeset,
+          operation: :configure_library_indexer,
+          definition_id: definition.id,
+          user_id: socket.assigns.current_user.id
+        )
+
+        error_msg = MydiaLogger.user_error_message(:configure_library_indexer, changeset)
+        {:noreply, put_flash(socket, :error, error_msg)}
+    end
+  end
+
+  @impl true
+  def handle_event(
+        "save_library_indexer_config",
+        %{"config" => config_params, "action" => "save"},
+        socket
+      ) do
+    definition = socket.assigns.configuring_library_indexer
+
+    case Indexers.configure_cardigann_definition(definition, config_params) do
+      {:ok, _updated_definition} ->
+        {:noreply,
+         socket
+         |> assign(:show_library_config_modal, false)
+         |> assign(:configuring_library_indexer, nil)
+         |> assign(:library_indexer_settings, [])
+         |> assign(:library_config_testing, false)
+         |> assign(:library_config_test_result, nil)
+         |> put_flash(:info, "Configuration saved for #{definition.name}")
+         |> load_configuration_data()}
+
+      {:error, changeset} ->
+        MydiaLogger.log_error(:liveview, "Failed to configure library indexer",
+          error: changeset,
+          operation: :configure_library_indexer,
+          definition_id: definition.id,
+          user_id: socket.assigns.current_user.id
+        )
+
+        error_msg = MydiaLogger.user_error_message(:configure_library_indexer, changeset)
+
+        {:noreply, put_flash(socket, :error, error_msg)}
+    end
+  end
+
+  # Fallback for form without action (backwards compatibility)
   @impl true
   def handle_event("save_library_indexer_config", %{"config" => config_params}, socket) do
     definition = socket.assigns.configuring_library_indexer
@@ -1334,6 +1446,9 @@ defmodule MydiaWeb.AdminConfigLive.Index do
          socket
          |> assign(:show_library_config_modal, false)
          |> assign(:configuring_library_indexer, nil)
+         |> assign(:library_indexer_settings, [])
+         |> assign(:library_config_testing, false)
+         |> assign(:library_config_test_result, nil)
          |> put_flash(:info, "Configuration saved for #{definition.name}")
          |> load_configuration_data()}
 
@@ -1628,6 +1743,7 @@ defmodule MydiaWeb.AdminConfigLive.Index do
     |> assign(:show_indexer_library_modal, false)
     |> assign(:show_library_config_modal, false)
     |> assign(:configuring_library_indexer, nil)
+    |> assign(:library_indexer_settings, [])
     |> assign_new(:recently_disabled_indexer, fn -> nil end)
   end
 

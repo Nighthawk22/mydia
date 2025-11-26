@@ -46,8 +46,6 @@ defmodule MydiaWeb.AdminConfigLive.IndexerLibraryComponent do
       |> assign_new(:filter_language, fn -> "all" end)
       |> assign_new(:filter_enabled, fn -> "all" end)
       |> assign_new(:search_query, fn -> "" end)
-      |> assign_new(:show_config_modal, fn -> false end)
-      |> assign_new(:configuring_definition, fn -> nil end)
       |> assign_new(:syncing, fn -> false end)
       |> load_indexers()
 
@@ -76,6 +74,14 @@ defmodule MydiaWeb.AdminConfigLive.IndexerLibraryComponent do
           >
             <.icon name="hero-x-mark" class="w-5 h-5" />
           </button>
+        </div>
+        <%!-- Experimental Warning --%>
+        <div class="alert alert-warning mb-4">
+          <.icon name="hero-beaker" class="w-5 h-5" />
+          <span class="text-sm">
+            <span class="font-medium">Experimental:</span>
+            Only a limited number of indexers have been tested. Prowlarr and Jackett integrations are stable and recommended.
+          </span>
         </div>
         <%!-- Filters and Search --%>
         <div class="card bg-base-200 shadow-sm mb-4">
@@ -199,27 +205,28 @@ defmodule MydiaWeb.AdminConfigLive.IndexerLibraryComponent do
                         </div>
                       <% end %>
                     </div>
-                    <%!-- Status and Health --%>
-                    <div class="flex items-center gap-3 flex-wrap">
-                      <span class={"badge badge-sm #{indexer_status_class(definition)}"}>
-                        {indexer_status_label(definition)}
-                      </span>
+                    <%!-- Actions --%>
+                    <div class="flex items-center gap-3">
+                      <%!-- Needs config warning --%>
                       <%= if needs_configuration?(definition) and definition.enabled do %>
                         <div class="tooltip" data-tip="This indexer requires configuration">
                           <.icon name="hero-exclamation-triangle" class="w-4 h-4 text-warning" />
                         </div>
                       <% end %>
+                      <%!-- Health status --%>
                       <%= if definition.enabled and definition.health_status not in [nil, "unknown"] do %>
                         <span class={"badge badge-sm #{health_status_badge_class(definition.health_status)}"}>
                           {health_status_label(definition.health_status)}
                         </span>
                       <% end %>
-                    </div>
-                    <%!-- Actions --%>
-                    <div class="flex items-center gap-3">
-                      <%!-- Enable/Disable toggle with label --%>
-                      <label class="flex items-center gap-1.5 cursor-pointer">
-                        <span class="text-xs text-base-content/60">Enable</span>
+                      <%!-- Enable/Disable toggle with status label --%>
+                      <label class="flex items-center gap-2 cursor-pointer">
+                        <span class={[
+                          "text-xs font-medium min-w-14 text-right",
+                          if(definition.enabled, do: "text-success", else: "text-base-content/50")
+                        ]}>
+                          {if definition.enabled, do: "Enabled", else: "Disabled"}
+                        </span>
                         <input
                           type="checkbox"
                           class="toggle toggle-success toggle-sm"
@@ -229,62 +236,6 @@ defmodule MydiaWeb.AdminConfigLive.IndexerLibraryComponent do
                           phx-value-id={definition.id}
                         />
                       </label>
-
-                      <%!-- FlareSolverr toggle with label and icon --%>
-                      <div
-                        class="tooltip tooltip-left"
-                        data-tip={
-                          if definition.flaresolverr_required,
-                            do: "Cloudflare bypass (recommended for this indexer)",
-                            else: "Enable Cloudflare bypass via FlareSolverr"
-                        }
-                      >
-                        <label class="flex items-center gap-1.5 cursor-pointer">
-                          <.icon
-                            name="hero-shield-check"
-                            class={"w-4 h-4 #{if(definition.flaresolverr_enabled, do: "text-warning", else: "text-base-content/30")}"}
-                          />
-                          <span class="text-xs text-base-content/60">CF</span>
-                          <input
-                            type="checkbox"
-                            class={[
-                              "toggle toggle-sm",
-                              if(definition.flaresolverr_required,
-                                do: "toggle-warning",
-                                else: "toggle-info"
-                              )
-                            ]}
-                            checked={definition.flaresolverr_enabled}
-                            phx-click="toggle_flaresolverr"
-                            phx-target={@myself}
-                            phx-value-id={definition.id}
-                          />
-                        </label>
-                      </div>
-
-                      <%!-- Action buttons --%>
-                      <%= if definition.enabled do %>
-                        <button
-                          class="btn btn-sm btn-ghost"
-                          phx-click="test_connection"
-                          phx-target={@myself}
-                          phx-value-id={definition.id}
-                          title="Test Connection"
-                        >
-                          <.icon name="hero-signal" class="w-4 h-4" />
-                        </button>
-                      <% end %>
-                      <%= if definition.type in ["private", "semi-private"] do %>
-                        <button
-                          class="btn btn-sm btn-ghost"
-                          phx-click="configure_indexer"
-                          phx-target={@myself}
-                          phx-value-id={definition.id}
-                          title="Configure"
-                        >
-                          <.icon name="hero-cog-6-tooth" class="w-4 h-4" />
-                        </button>
-                      <% end %>
                     </div>
                   </div>
                 </div>
@@ -298,92 +249,6 @@ defmodule MydiaWeb.AdminConfigLive.IndexerLibraryComponent do
         </div>
       </div>
       <div class="modal-backdrop" phx-click="close_indexer_library"></div>
-      <%!-- Configuration Modal (nested) --%>
-      <%= if @show_config_modal do %>
-        <div class="modal modal-open z-50">
-          <div class="modal-box max-w-2xl">
-            <h3 class="font-bold text-lg mb-4">
-              Configure {@configuring_definition.name}
-            </h3>
-
-            <div class="alert alert-info mb-4">
-              <.icon name="hero-information-circle" class="w-5 h-5" />
-              <span>
-                Private indexers require authentication. Enter your credentials below.
-              </span>
-            </div>
-
-            <form id="indexer-config-form" phx-submit="save_config" phx-target={@myself}>
-              <div class="space-y-4">
-                <%!-- Username --%>
-                <div class="form-control">
-                  <label class="label">
-                    <span class="label-text">Username</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="config[username]"
-                    value={get_in(@configuring_definition.config || %{}, ["username"])}
-                    class="input input-bordered"
-                    placeholder="Your indexer username"
-                  />
-                </div>
-                <%!-- Password --%>
-                <div class="form-control">
-                  <label class="label">
-                    <span class="label-text">Password</span>
-                  </label>
-                  <input
-                    type="password"
-                    name="config[password]"
-                    value={get_in(@configuring_definition.config || %{}, ["password"])}
-                    class="input input-bordered"
-                    placeholder="Your indexer password"
-                  />
-                </div>
-                <%!-- API Key (optional) --%>
-                <div class="form-control">
-                  <label class="label">
-                    <span class="label-text">API Key (if applicable)</span>
-                  </label>
-                  <input
-                    type="password"
-                    name="config[api_key]"
-                    value={get_in(@configuring_definition.config || %{}, ["api_key"])}
-                    class="input input-bordered"
-                    placeholder="Optional API key"
-                  />
-                </div>
-                <%!-- Cookie (optional) --%>
-                <div class="form-control">
-                  <label class="label">
-                    <span class="label-text">Cookie String (if applicable)</span>
-                  </label>
-                  <textarea
-                    name="config[cookie]"
-                    rows="3"
-                    class="textarea textarea-bordered"
-                    placeholder="Optional cookie string for authentication"
-                  >{get_in(@configuring_definition.config || %{}, ["cookie"])}</textarea>
-                </div>
-              </div>
-
-              <div class="modal-action">
-                <button
-                  type="button"
-                  class="btn"
-                  phx-click="close_config_modal"
-                  phx-target={@myself}
-                >
-                  Cancel
-                </button>
-                <button type="submit" class="btn btn-primary">Save Configuration</button>
-              </div>
-            </form>
-          </div>
-          <div class="modal-backdrop" phx-click="close_config_modal" phx-target={@myself}></div>
-        </div>
-      <% end %>
     </div>
     """
   end
@@ -448,79 +313,6 @@ defmodule MydiaWeb.AdminConfigLive.IndexerLibraryComponent do
   end
 
   @impl true
-  def handle_event("toggle_flaresolverr", %{"id" => id}, socket) do
-    definition = Indexers.get_cardigann_definition!(id)
-    new_enabled = !definition.flaresolverr_enabled
-
-    case Indexers.update_flaresolverr_settings(definition, %{flaresolverr_enabled: new_enabled}) do
-      {:ok, updated_definition} ->
-        action = if updated_definition.flaresolverr_enabled, do: "enabled", else: "disabled"
-
-        {:noreply,
-         socket
-         |> put_flash(:info, "FlareSolverr #{action} for #{definition.name}")
-         |> load_indexers()}
-
-      {:error, changeset} ->
-        MydiaLogger.log_error(:liveview, "Failed to toggle FlareSolverr",
-          error: changeset,
-          operation: :toggle_flaresolverr,
-          definition_id: id,
-          user_id: socket.assigns.current_user.id
-        )
-
-        error_msg = MydiaLogger.user_error_message(:toggle_flaresolverr, changeset)
-
-        {:noreply,
-         socket
-         |> put_flash(:error, error_msg)}
-    end
-  end
-
-  @impl true
-  def handle_event("configure_indexer", %{"id" => id}, socket) do
-    definition = Indexers.get_cardigann_definition!(id)
-
-    {:noreply,
-     socket
-     |> assign(:show_config_modal, true)
-     |> assign(:configuring_definition, definition)}
-  end
-
-  @impl true
-  def handle_event("close_config_modal", _params, socket) do
-    {:noreply, assign(socket, :show_config_modal, false)}
-  end
-
-  @impl true
-  def handle_event("save_config", %{"config" => config_params}, socket) do
-    definition = socket.assigns.configuring_definition
-
-    case Indexers.configure_cardigann_definition(definition, config_params) do
-      {:ok, _updated_definition} ->
-        {:noreply,
-         socket
-         |> assign(:show_config_modal, false)
-         |> put_flash(:info, "Configuration saved successfully")
-         |> load_indexers()}
-
-      {:error, changeset} ->
-        MydiaLogger.log_error(:liveview, "Failed to configure indexer",
-          error: changeset,
-          operation: :configure_library_indexer,
-          definition_id: definition.id,
-          user_id: socket.assigns.current_user.id
-        )
-
-        error_msg = MydiaLogger.user_error_message(:configure_library_indexer, changeset)
-
-        {:noreply,
-         socket
-         |> put_flash(:error, error_msg)}
-    end
-  end
-
-  @impl true
   def handle_event("sync_definitions", _params, socket) do
     # Run sync in a separate process to avoid blocking the LiveView
     # Use send_update to notify this component when sync completes
@@ -536,38 +328,6 @@ defmodule MydiaWeb.AdminConfigLive.IndexerLibraryComponent do
      socket
      |> assign(:syncing, true)
      |> put_flash(:info, "Sync started - this may take a few minutes...")}
-  end
-
-  @impl true
-  def handle_event("test_connection", %{"id" => id}, socket) do
-    case Indexers.test_cardigann_connection(id) do
-      {:ok, result} ->
-        flash_message =
-          if result.success do
-            "Connection successful (#{result.response_time_ms}ms)"
-          else
-            "Connection failed: #{result.error || "Unknown error"}"
-          end
-
-        flash_type = if result.success, do: :info, else: :error
-
-        {:noreply,
-         socket
-         |> put_flash(flash_type, flash_message)
-         |> load_indexers()}
-
-      {:error, reason} ->
-        MydiaLogger.log_error(:liveview, "Failed to test connection",
-          error: reason,
-          operation: :test_library_indexer_connection,
-          definition_id: id,
-          user_id: socket.assigns.current_user.id
-        )
-
-        {:noreply,
-         socket
-         |> put_flash(:error, "Failed to test connection: #{inspect(reason)}")}
-    end
   end
 
   ## Private Functions
@@ -629,28 +389,6 @@ defmodule MydiaWeb.AdminConfigLive.IndexerLibraryComponent do
   defp indexer_type_badge_class("private"), do: "badge-error"
   defp indexer_type_badge_class("semi-private"), do: "badge-warning"
   defp indexer_type_badge_class(_), do: "badge-ghost"
-
-  defp indexer_status_class(%CardigannDefinition{enabled: false}), do: "badge-ghost"
-
-  defp indexer_status_class(%CardigannDefinition{enabled: true, type: "private", config: nil}),
-    do: "badge-warning"
-
-  defp indexer_status_class(%CardigannDefinition{enabled: true, type: "private", config: config})
-       when config == %{},
-       do: "badge-warning"
-
-  defp indexer_status_class(%CardigannDefinition{enabled: true}), do: "badge-success"
-
-  defp indexer_status_label(%CardigannDefinition{enabled: false}), do: "Disabled"
-
-  defp indexer_status_label(%CardigannDefinition{enabled: true, type: "private", config: nil}),
-    do: "Needs Config"
-
-  defp indexer_status_label(%CardigannDefinition{enabled: true, type: "private", config: config})
-       when config == %{},
-       do: "Needs Config"
-
-  defp indexer_status_label(%CardigannDefinition{enabled: true}), do: "Enabled"
 
   defp needs_configuration?(%CardigannDefinition{type: "public"}), do: false
 

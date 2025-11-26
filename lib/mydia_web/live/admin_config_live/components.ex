@@ -852,19 +852,6 @@ defmodule MydiaWeb.AdminConfigLive.Components do
         </div>
       </div>
 
-      <%= if @cardigann_enabled do %>
-        <div class="alert alert-warning">
-          <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
-          <div>
-            <div class="font-medium">Library indexers are experimental</div>
-            <div class="text-sm opacity-80">
-              Only a limited number of indexers have been tested. You may encounter issues with untested indexers.
-              Please report any problems as GitHub issues.
-            </div>
-          </div>
-        </div>
-      <% end %>
-
       <%= if @indexers == [] and @library_indexers == [] do %>
         <div class="alert alert-info">
           <.icon name="hero-information-circle" class="w-5 h-5" />
@@ -1113,17 +1100,15 @@ defmodule MydiaWeb.AdminConfigLive.Components do
                         </div>
                       <% end %>
 
-                      <%!-- Configure button (for private/semi-private indexers) --%>
-                      <%= if indexer.type in ["private", "semi-private"] do %>
-                        <button
-                          class="btn btn-sm btn-ghost"
-                          phx-click="configure_library_indexer"
-                          phx-value-id={indexer.id}
-                          title="Configure credentials"
-                        >
-                          <.icon name="hero-cog-6-tooth" class="w-4 h-4" />
-                        </button>
-                      <% end %>
+                      <%!-- Configure button --%>
+                      <button
+                        class="btn btn-sm btn-ghost"
+                        phx-click="configure_library_indexer"
+                        phx-value-id={indexer.id}
+                        title="Configure"
+                      >
+                        <.icon name="hero-cog-6-tooth" class="w-4 h-4" />
+                      </button>
 
                       <%!-- Test button --%>
                       <button
@@ -2331,85 +2316,144 @@ defmodule MydiaWeb.AdminConfigLive.Components do
 
   @doc """
   Renders the Library Indexer Config modal.
+
+  Dynamically renders form fields based on the indexer's settings definition.
   """
   attr :configuring_library_indexer, :any, required: true
+  attr :settings, :list, default: []
+  attr :testing, :boolean, default: false
+  attr :test_result, :map, default: nil
 
   def library_config_modal(assigns) do
     ~H"""
     <div class="modal modal-open">
       <div class="modal-box max-w-2xl">
-        <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
-          <.icon name="hero-cog-6-tooth" class="w-5 h-5 opacity-60" />
-          Configure {@configuring_library_indexer.name}
-        </h3>
+        <%!-- Header with close button --%>
+        <div class="flex items-start justify-between mb-4">
+          <div>
+            <h3 class="font-bold text-lg flex items-center gap-2">
+              <.icon name="hero-cog-6-tooth" class="w-5 h-5 opacity-60" />
+              Configure {@configuring_library_indexer.name}
+            </h3>
+            <div class="flex items-center gap-2 mt-1">
+              <span class={"badge badge-sm #{library_indexer_type_badge(@configuring_library_indexer.type)}"}>
+                {@configuring_library_indexer.type}
+              </span>
+              <%= if @configuring_library_indexer.language do %>
+                <span class="badge badge-sm badge-ghost">
+                  {@configuring_library_indexer.language}
+                </span>
+              <% end %>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost btn-circle"
+            phx-click="close_library_config_modal"
+          >
+            <.icon name="hero-x-mark" class="w-5 h-5" />
+          </button>
+        </div>
 
-        <div class="alert alert-info mb-4">
-          <.icon name="hero-information-circle" class="w-5 h-5" />
-          <span>
-            Private indexers require authentication. Enter your credentials below.
+        <%!-- Info banner --%>
+        <div class="alert mb-4">
+          <.icon name="hero-information-circle" class="w-5 h-5 shrink-0" />
+          <span class="text-sm">
+            <%= if @configuring_library_indexer.type == "private" do %>
+              This indexer requires authentication to search and download torrents.
+            <% else %>
+              Configure optional settings for this indexer.
+            <% end %>
           </span>
         </div>
 
         <form id="library-indexer-config-form" phx-submit="save_library_indexer_config">
-          <div class="space-y-4">
-            <%!-- Username --%>
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text">Username</span>
-              </label>
-              <input
-                type="text"
-                name="config[username]"
-                value={get_in(@configuring_library_indexer.config || %{}, ["username"])}
-                class="input input-bordered"
-                placeholder="Your indexer username"
-              />
-            </div>
-            <%!-- Password --%>
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text">Password</span>
-              </label>
-              <input
-                type="password"
-                name="config[password]"
-                value={get_in(@configuring_library_indexer.config || %{}, ["password"])}
-                class="input input-bordered"
-                placeholder="Your indexer password"
-              />
-            </div>
-            <%!-- API Key (optional) --%>
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text">API Key (if applicable)</span>
-              </label>
-              <input
-                type="password"
-                name="config[api_key]"
-                value={get_in(@configuring_library_indexer.config || %{}, ["api_key"])}
-                class="input input-bordered"
-                placeholder="Optional API key"
-              />
-            </div>
-            <%!-- Cookie (optional) --%>
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text">Cookie String (if applicable)</span>
-              </label>
-              <textarea
-                name="config[cookie]"
-                rows="3"
-                class="textarea textarea-bordered"
-                placeholder="Optional cookie string for authentication"
-              >{get_in(@configuring_library_indexer.config || %{}, ["cookie"])}</textarea>
+          <%!-- Settings Card --%>
+          <div class="card bg-base-200">
+            <div class="card-body p-4">
+              <div class="space-y-4">
+                <%= if @settings == [] do %>
+                  <%!-- Fallback: Generic username/password form --%>
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Username</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="config[username]"
+                      value={get_in(@configuring_library_indexer.config || %{}, ["username"])}
+                      class="input input-bordered w-full"
+                      placeholder="Enter your username"
+                    />
+                  </div>
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Password</span>
+                    </label>
+                    <input
+                      type="password"
+                      name="config[password]"
+                      value={get_in(@configuring_library_indexer.config || %{}, ["password"])}
+                      class="input input-bordered w-full"
+                      placeholder="Enter your password"
+                    />
+                  </div>
+                <% else %>
+                  <%!-- Dynamic fields from indexer definition --%>
+                  <%= for setting <- @settings do %>
+                    <.library_config_field
+                      setting={setting}
+                      config={@configuring_library_indexer.config || %{}}
+                    />
+                  <% end %>
+                <% end %>
+              </div>
             </div>
           </div>
 
+          <%!-- Test Result --%>
+          <%= if @test_result do %>
+            <div class={[
+              "alert mt-4",
+              if(@test_result.success, do: "alert-success", else: "alert-error")
+            ]}>
+              <.icon
+                name={if @test_result.success, do: "hero-check-circle", else: "hero-x-circle"}
+                class="w-5 h-5 shrink-0"
+              />
+              <div>
+                <div class="font-medium">{@test_result.message}</div>
+                <%= if @test_result.response_time_ms do %>
+                  <div class="text-sm opacity-80">
+                    Response time: {@test_result.response_time_ms}ms
+                  </div>
+                <% end %>
+                <%= if @test_result.error do %>
+                  <div class="text-sm opacity-80">{@test_result.error}</div>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+
+          <%!-- Actions --%>
           <div class="modal-action">
             <button type="button" class="btn" phx-click="close_library_config_modal">
               Cancel
             </button>
-            <button type="submit" class="btn btn-primary">Save Configuration</button>
+            <button
+              type="submit"
+              name="action"
+              value="test"
+              class="btn btn-secondary"
+              disabled={@testing}
+            >
+              <%= if @testing do %>
+                <span class="loading loading-spinner loading-sm"></span> Testing...
+              <% else %>
+                <.icon name="hero-signal" class="w-4 h-4" /> Test Connection
+              <% end %>
+            </button>
+            <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
           </div>
         </form>
       </div>
@@ -2417,6 +2461,132 @@ defmodule MydiaWeb.AdminConfigLive.Components do
     </div>
     """
   end
+
+  defp library_indexer_type_badge("public"), do: "badge-success"
+  defp library_indexer_type_badge("private"), do: "badge-error"
+  defp library_indexer_type_badge("semi-private"), do: "badge-warning"
+  defp library_indexer_type_badge(_), do: "badge-ghost"
+
+  # Renders a single config field based on its type
+  attr :setting, :map, required: true
+  attr :config, :map, required: true
+
+  defp library_config_field(assigns) do
+    assigns =
+      assigns
+      |> assign(:field_name, assigns.setting.name)
+      |> assign(
+        :field_label,
+        assigns.setting[:label] || humanize_field_name(assigns.setting.name)
+      )
+      |> assign(:field_type, assigns.setting.type)
+      |> assign(:field_default, assigns.setting[:default])
+      |> assign(:field_options, assigns.setting[:options])
+      |> assign(
+        :current_value,
+        get_in(assigns.config, [assigns.setting.name]) || assigns.setting[:default]
+      )
+
+    ~H"""
+    <div class="form-control">
+      <%= case @field_type do %>
+        <% "text" -> %>
+          <label class="label">
+            <span class="label-text font-medium">{@field_label}</span>
+          </label>
+          <input
+            type="text"
+            name={"config[#{@field_name}]"}
+            value={@current_value}
+            class="input input-bordered w-full"
+          />
+        <% "password" -> %>
+          <label class="label">
+            <span class="label-text font-medium">{@field_label}</span>
+          </label>
+          <input
+            type="password"
+            name={"config[#{@field_name}]"}
+            value={@current_value}
+            class="input input-bordered w-full"
+          />
+        <% "checkbox" -> %>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input
+              type="hidden"
+              name={"config[#{@field_name}]"}
+              value="false"
+            />
+            <input
+              type="checkbox"
+              name={"config[#{@field_name}]"}
+              value="true"
+              checked={@current_value == true or @current_value == "true"}
+              class="checkbox checkbox-primary"
+            />
+            <span class="label-text font-medium">{@field_label}</span>
+          </label>
+        <% "select" -> %>
+          <label class="label">
+            <span class="label-text font-medium">{@field_label}</span>
+          </label>
+          <select name={"config[#{@field_name}]"} class="select select-bordered w-full">
+            <%= if @field_options do %>
+              <%= for {label, value} <- normalize_select_options(@field_options) do %>
+                <option value={value} selected={to_string(@current_value) == to_string(value)}>
+                  {label}
+                </option>
+              <% end %>
+            <% end %>
+          </select>
+        <% "info" -> %>
+          <label class="label">
+            <span class="label-text font-medium">{@field_label}</span>
+          </label>
+          <div class="text-sm text-base-content/70 bg-base-300 p-3 rounded-lg">
+            {@field_default || "No additional information"}
+          </div>
+        <% _ -> %>
+          <%!-- Default to text input for unknown types --%>
+          <label class="label">
+            <span class="label-text font-medium">{@field_label}</span>
+          </label>
+          <input
+            type="text"
+            name={"config[#{@field_name}]"}
+            value={@current_value}
+            class="input input-bordered w-full"
+          />
+      <% end %>
+    </div>
+    """
+  end
+
+  defp humanize_field_name(name) when is_binary(name) do
+    name
+    |> String.replace("_", " ")
+    |> String.replace("-", " ")
+    |> String.split(" ")
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
+
+  defp humanize_field_name(name) when is_atom(name), do: humanize_field_name(Atom.to_string(name))
+
+  defp normalize_select_options(options) when is_map(options) do
+    Enum.map(options, fn {k, v} -> {v, k} end)
+  end
+
+  defp normalize_select_options(options) when is_list(options) do
+    Enum.map(options, fn
+      %{"name" => name, "value" => value} -> {name, value}
+      %{name: name, value: value} -> {name, value}
+      value when is_binary(value) -> {value, value}
+      value -> {to_string(value), value}
+    end)
+  end
+
+  defp normalize_select_options(_), do: []
 
   # ============================================================================
   # Helper Functions

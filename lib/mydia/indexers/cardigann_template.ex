@@ -88,10 +88,17 @@ defmodule Mydia.Indexers.CardigannTemplate do
     )
     |> reduce(:build_field_path)
 
-  # Simple value: field, string, or identifier
+  # Integer literal (for index function)
+  integer_lit =
+    optional(string("-"))
+    |> ascii_string([?0..?9], min: 1)
+    |> reduce(:build_integer)
+
+  # Simple value: field, string, integer, or identifier
   simple_value =
     choice([
       string_lit |> unwrap_and_tag(:string),
+      integer_lit,
       field_path
     ])
 
@@ -204,6 +211,9 @@ defmodule Mydia.Indexers.CardigannTemplate do
   defp build_field_path(["." | segments]), do: {:field, segments}
   defp build_field_path(parts), do: {:field, parts}
 
+  defp build_integer([num_str]), do: {:integer, String.to_integer(num_str)}
+  defp build_integer(["-", num_str]), do: {:integer, -String.to_integer(num_str)}
+
   defp tag_text(rest, [""], context, _line, _offset), do: {rest, [], context}
   defp tag_text(rest, [text], context, _line, _offset), do: {rest, [{:text, text}], context}
 
@@ -219,11 +229,27 @@ defmodule Mydia.Indexers.CardigannTemplate do
         {:ok, evaluate_tokens(tokens, context, url_encode?)}
 
       {:ok, _, rest, _, {line, _}, offset} ->
-        {:error,
-         "parse error at line #{line}, offset #{offset}: unexpected '#{String.slice(rest, 0, 20)}'"}
+        error_msg =
+          "parse error at line #{line}, offset #{offset}: unexpected '#{String.slice(rest, 0, 20)}'"
+
+        Logger.info("Template parse failed: #{error_msg}",
+          template: String.slice(template, 0, 100),
+          line: line,
+          offset: offset
+        )
+
+        {:error, error_msg}
 
       {:error, reason, _, _, {line, _}, offset} ->
-        {:error, "parse error at line #{line}, offset #{offset}: #{reason}"}
+        error_msg = "parse error at line #{line}, offset #{offset}: #{reason}"
+
+        Logger.info("Template parse failed: #{error_msg}",
+          template: String.slice(template, 0, 100),
+          line: line,
+          offset: offset
+        )
+
+        {:error, error_msg}
     end
   rescue
     e ->
@@ -293,9 +319,14 @@ defmodule Mydia.Indexers.CardigannTemplate do
             result
           end)
 
-        [] when after_else != [] ->
-          {result, _} = eval_tokens(after_else, ctx, url_encode?, [])
-          result
+        empty when (is_list(empty) and empty == []) or is_nil(empty) ->
+          # Empty list or nil - execute else branch if present
+          if after_else != [] do
+            {result, _} = eval_tokens(after_else, ctx, url_encode?, [])
+            result
+          else
+            ""
+          end
 
         _ ->
           ""
@@ -337,13 +368,13 @@ defmodule Mydia.Indexers.CardigannTemplate do
     eval_tokens(rest, ctx, url_encode?, acc)
   end
 
-  # Collect if/else/end branches
+  # Collect if/else/end branches (with nesting depth tracking)
   defp collect_if_branches(tokens) do
-    {true_branch, rest} = collect_until_else_or_end(tokens, [])
+    {true_branch, rest} = collect_until_else_or_end_at_depth(tokens, [], 0)
 
     case rest do
       [{_tag, [:else]} | after_else] ->
-        {false_branch, rest2} = collect_until_keyword(after_else, :end, [])
+        {false_branch, rest2} = collect_until_end_at_depth(after_else, [], 0)
         {true_branch, false_branch, rest2}
 
       [{_tag, [:end]} | rest2] ->
@@ -354,13 +385,13 @@ defmodule Mydia.Indexers.CardigannTemplate do
     end
   end
 
-  # Collect until end (for range, with)
+  # Collect until end (for range, with) - with nesting depth tracking
   defp collect_until_end(tokens) do
-    {body, rest} = collect_until_else_or_end(tokens, [])
+    {body, rest} = collect_until_else_or_end_at_depth(tokens, [], 0)
 
     case rest do
       [{_tag, [:else]} | after_else] ->
-        {else_body, rest2} = collect_until_keyword(after_else, :end, [])
+        {else_body, rest2} = collect_until_end_at_depth(after_else, [], 0)
         {body, else_body, rest2}
 
       [{_tag, [:end]} | rest2] ->
@@ -371,34 +402,87 @@ defmodule Mydia.Indexers.CardigannTemplate do
     end
   end
 
-  # Collect tokens until else or end
-  defp collect_until_else_or_end([], acc), do: {Enum.reverse(acc), []}
+  # Collect tokens until else or end at depth 0 (tracking nesting)
+  defp collect_until_else_or_end_at_depth([], acc, _depth), do: {Enum.reverse(acc), []}
 
-  defp collect_until_else_or_end([{tag, [:else]} | _] = rest, acc)
+  # At depth 0, stop at else or end
+  defp collect_until_else_or_end_at_depth([{tag, [:else]} | _] = rest, acc, 0)
        when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
     {Enum.reverse(acc), rest}
   end
 
-  defp collect_until_else_or_end([{tag, [:end]} | _] = rest, acc)
+  defp collect_until_else_or_end_at_depth([{tag, [:end]} | _] = rest, acc, 0)
        when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
     {Enum.reverse(acc), rest}
   end
 
-  defp collect_until_else_or_end([token | rest], acc) do
-    collect_until_else_or_end(rest, [token | acc])
+  # Increase depth on if/range/with
+  defp collect_until_else_or_end_at_depth([{tag, [:if | _]} = token | rest], acc, depth)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
+    collect_until_else_or_end_at_depth(rest, [token | acc], depth + 1)
   end
 
-  # Collect tokens until specific keyword
-  defp collect_until_keyword([], _keyword, acc), do: {Enum.reverse(acc), []}
+  defp collect_until_else_or_end_at_depth([{tag, [:range | _]} = token | rest], acc, depth)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
+    collect_until_else_or_end_at_depth(rest, [token | acc], depth + 1)
+  end
 
-  defp collect_until_keyword([{tag, [kw]} | rest], keyword, acc)
+  defp collect_until_else_or_end_at_depth([{tag, [:with | _]} = token | rest], acc, depth)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
+    collect_until_else_or_end_at_depth(rest, [token | acc], depth + 1)
+  end
+
+  # Decrease depth on end (when depth > 0)
+  defp collect_until_else_or_end_at_depth([{tag, [:end]} = token | rest], acc, depth)
        when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] and
-              kw == keyword do
+              depth > 0 do
+    collect_until_else_or_end_at_depth(rest, [token | acc], depth - 1)
+  end
+
+  # Skip else at non-zero depth
+  defp collect_until_else_or_end_at_depth([{tag, [:else]} = token | rest], acc, depth)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] and
+              depth > 0 do
+    collect_until_else_or_end_at_depth(rest, [token | acc], depth)
+  end
+
+  defp collect_until_else_or_end_at_depth([token | rest], acc, depth) do
+    collect_until_else_or_end_at_depth(rest, [token | acc], depth)
+  end
+
+  # Collect tokens until end at depth 0
+  defp collect_until_end_at_depth([], acc, _depth), do: {Enum.reverse(acc), []}
+
+  defp collect_until_end_at_depth([{tag, [:end]} | rest], acc, 0)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
     {Enum.reverse(acc), rest}
   end
 
-  defp collect_until_keyword([token | rest], keyword, acc) do
-    collect_until_keyword(rest, keyword, [token | acc])
+  # Increase depth on if/range/with
+  defp collect_until_end_at_depth([{tag, [:if | _]} = token | rest], acc, depth)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
+    collect_until_end_at_depth(rest, [token | acc], depth + 1)
+  end
+
+  defp collect_until_end_at_depth([{tag, [:range | _]} = token | rest], acc, depth)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
+    collect_until_end_at_depth(rest, [token | acc], depth + 1)
+  end
+
+  defp collect_until_end_at_depth([{tag, [:with | _]} = token | rest], acc, depth)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] do
+    collect_until_end_at_depth(rest, [token | acc], depth + 1)
+  end
+
+  # Decrease depth on end (when depth > 0)
+  defp collect_until_end_at_depth([{tag, [:end]} = token | rest], acc, depth)
+       when tag in [:action, :action_trim_left, :action_trim_right, :action_trim_both] and
+              depth > 0 do
+    collect_until_end_at_depth(rest, [token | acc], depth - 1)
+  end
+
+  defp collect_until_end_at_depth([token | rest], acc, depth) do
+    collect_until_end_at_depth(rest, [token | acc], depth)
   end
 
   # Evaluate an expression (list of pipeline stages)
@@ -412,6 +496,9 @@ defmodule Mydia.Indexers.CardigannTemplate do
 
         {:string, str} ->
           str
+
+        {:integer, num} ->
+          num
 
         {:call, [func_name | args]} ->
           arg_values = Enum.map(args, &eval_expression([&1], ctx))
@@ -431,47 +518,111 @@ defmodule Mydia.Indexers.CardigannTemplate do
   end
 
   # Resolve field path
-  defp resolve_field([], ctx), do: ctx
-  defp resolve_field([""], ctx), do: ctx
+  # When path is empty (just "." in the template), return the dot value if in a range/with context
+  defp resolve_field([], ctx), do: Map.get(ctx, :dot, ctx)
+  defp resolve_field([""], ctx), do: Map.get(ctx, :dot, ctx)
 
-  defp resolve_field(["Keywords"], ctx), do: ctx[:keywords]
+  defp resolve_field(["Keywords"], ctx) do
+    value = ctx[:keywords]
+    Logger.debug("Resolved field .Keywords => #{inspect(value)}")
+    value
+  end
 
-  defp resolve_field(["Config", key], ctx), do: get_config_value(ctx, key)
-  defp resolve_field(["Query", key], ctx), do: get_query_value(ctx, key)
-  defp resolve_field(["Categories"], ctx), do: ctx[:categories] || []
-  defp resolve_field(["Today", "Year"], _ctx), do: Date.utc_today().year
+  defp resolve_field(["Config", key], ctx) do
+    value = get_config_value(ctx, key)
+    Logger.debug("Resolved field .Config.#{key} => #{inspect(value)}")
+    value
+  end
+
+  defp resolve_field(["Query", key], ctx) do
+    value = get_query_value(ctx, key)
+    Logger.debug("Resolved field .Query.#{key} => #{inspect(value)}")
+    value
+  end
+
+  defp resolve_field(["Categories"], ctx) do
+    value = ctx[:categories] || []
+    Logger.debug("Resolved field .Categories => #{inspect(value)}")
+    value
+  end
+
+  defp resolve_field(["Today", "Year"], _ctx) do
+    value = Date.utc_today().year
+    Logger.debug("Resolved field .Today.Year => #{inspect(value)}")
+    value
+  end
+
   defp resolve_field(["True"], _ctx), do: true
   defp resolve_field(["False"], _ctx), do: false
 
   defp resolve_field([key], ctx) do
-    atom_key = String.downcase(key) |> String.to_existing_atom()
-    Map.get(ctx, atom_key)
-  rescue
-    ArgumentError -> nil
+    # First check if we're in a with/range context and the dot value has this key
+    dot_value = Map.get(ctx, :dot)
+
+    value =
+      cond do
+        # If we have a dot value that's a map, try to get the key from it first
+        is_map(dot_value) ->
+          Map.get(dot_value, key) ||
+            Map.get(dot_value, String.downcase(key)) ||
+            try do
+              Map.get(dot_value, String.to_existing_atom(key)) ||
+                Map.get(dot_value, String.downcase(key) |> String.to_existing_atom())
+            rescue
+              ArgumentError -> nil
+            end
+
+        # Fall back to context lookup
+        true ->
+          nil
+      end
+
+    # If not found in dot, try direct context lookup
+    value =
+      if is_nil(value) do
+        try do
+          atom_key = String.downcase(key) |> String.to_existing_atom()
+          Map.get(ctx, atom_key)
+        rescue
+          ArgumentError -> nil
+        end
+      else
+        value
+      end
+
+    Logger.debug("Resolved field .#{key} => #{inspect(value)}")
+    value
   end
 
   defp resolve_field(path, ctx) when is_map(ctx) do
     # Generic nested field access
-    Enum.reduce_while(path, ctx, fn key, current ->
-      value =
-        case current do
-          %{} ->
-            Map.get(current, key) ||
-              try do
-                Map.get(current, String.to_existing_atom(key))
-              rescue
-                ArgumentError -> nil
-              end
+    result =
+      Enum.reduce_while(path, ctx, fn key, current ->
+        value =
+          case current do
+            %{} ->
+              Map.get(current, key) ||
+                try do
+                  Map.get(current, String.to_existing_atom(key))
+                rescue
+                  ArgumentError -> nil
+                end
 
-          _ ->
-            nil
-        end
+            _ ->
+              nil
+          end
 
-      if value, do: {:cont, value}, else: {:halt, nil}
-    end)
+        if value, do: {:cont, value}, else: {:halt, nil}
+      end)
+
+    Logger.debug("Resolved field path .#{Enum.join(path, ".")} => #{inspect(result)}")
+    result
   end
 
-  defp resolve_field(_path, _ctx), do: nil
+  defp resolve_field(path, _ctx) do
+    Logger.debug("Failed to resolve field path .#{inspect(path)}: context is not a map")
+    nil
+  end
 
   # Get config value
   defp get_config_value(context, key) do
@@ -588,9 +739,21 @@ defmodule Mydia.Indexers.CardigannTemplate do
   defp call_function("print", args, _ctx), do: Enum.map_join(args, " ", &to_string/1)
 
   defp call_function("printf", [fmt | args], _ctx) when is_binary(fmt) do
-    :io_lib.format(to_charlist(fmt), args) |> IO.iodata_to_binary()
+    # Convert Go-style format specifiers to Erlang style
+    # %s -> ~s (strings), %d -> ~B (integers), %v -> ~p (any value)
+    erlang_fmt =
+      fmt
+      |> String.replace("%s", "~s")
+      |> String.replace("%d", "~B")
+      |> String.replace("%v", "~p")
+      |> String.replace("%f", "~f")
+      |> String.replace("%%", "~%")
+
+    :io_lib.format(to_charlist(erlang_fmt), args) |> IO.iodata_to_binary()
   rescue
-    _ -> ""
+    e ->
+      Logger.debug("printf error: #{inspect(e)}, fmt=#{fmt}, args=#{inspect(args)}")
+      ""
   end
 
   defp call_function("println", args, _ctx), do: Enum.map_join(args, " ", &to_string/1) <> "\n"

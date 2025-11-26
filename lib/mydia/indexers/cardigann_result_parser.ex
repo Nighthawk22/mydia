@@ -86,6 +86,7 @@ defmodule Mydia.Indexers.CardigannResultParser do
   def parse_results(%Parsed{} = definition, response, indexer_name, opts \\ []) do
     body = response.body
     template_context = Keyword.get(opts, :template_context, %{})
+    base_url = Keyword.get(opts, :base_url, "")
 
     # Guard against nil or non-string bodies
     cond do
@@ -94,7 +95,7 @@ defmodule Mydia.Indexers.CardigannResultParser do
 
       is_map(body) ->
         # Req auto-decoded JSON response - parse directly
-        parse_json_results_from_map(definition, body, indexer_name, template_context)
+        parse_json_results_from_map(definition, body, indexer_name, template_context, base_url)
 
       not is_binary(body) ->
         {:error, Error.search_failed("Invalid response body type: #{inspect(body)}")}
@@ -105,10 +106,10 @@ defmodule Mydia.Indexers.CardigannResultParser do
       true ->
         case detect_response_type(body) do
           :html ->
-            parse_html_results(definition, body, indexer_name, template_context)
+            parse_html_results(definition, body, indexer_name, template_context, base_url)
 
           :json ->
-            parse_json_results(definition, body, indexer_name, template_context)
+            parse_json_results(definition, body, indexer_name, template_context, base_url)
         end
     end
   end
@@ -136,8 +137,15 @@ defmodule Mydia.Indexers.CardigannResultParser do
   - `{:ok, results}` - List of SearchResult structs
   - `{:error, reason}` - Parsing error
   """
-  @spec parse_html_results(Parsed.t(), String.t(), String.t(), map()) :: parse_result()
-  def parse_html_results(%Parsed{} = definition, html_body, indexer_name, template_context \\ %{}) do
+  @spec parse_html_results(Parsed.t(), String.t(), String.t(), map(), String.t()) ::
+          parse_result()
+  def parse_html_results(
+        %Parsed{} = definition,
+        html_body,
+        indexer_name,
+        template_context \\ %{},
+        base_url \\ ""
+      ) do
     with {:ok, document} <- parse_html_document(html_body),
          {:ok, rows} <- extract_rows(document, definition.search, template_context) do
       Logger.info("[#{indexer_name}] Extracted #{length(rows)} rows from HTML")
@@ -145,7 +153,7 @@ defmodule Mydia.Indexers.CardigannResultParser do
       case parse_row_fields(rows, definition.search, document, template_context) do
         {:ok, parsed_rows} ->
           Logger.info("[#{indexer_name}] Parsed #{length(parsed_rows)} rows successfully")
-          results = transform_to_search_results(parsed_rows, indexer_name)
+          results = transform_to_search_results(parsed_rows, indexer_name, base_url)
           Logger.info("[#{indexer_name}] Transformed to #{length(results)} search results")
           {:ok, results}
 
@@ -174,8 +182,15 @@ defmodule Mydia.Indexers.CardigannResultParser do
   - `{:ok, results}` - List of SearchResult structs
   - `{:error, reason}` - Parsing error
   """
-  @spec parse_json_results(Parsed.t(), String.t(), String.t(), map()) :: parse_result()
-  def parse_json_results(%Parsed{} = definition, json_body, indexer_name, template_context \\ %{}) do
+  @spec parse_json_results(Parsed.t(), String.t(), String.t(), map(), String.t()) ::
+          parse_result()
+  def parse_json_results(
+        %Parsed{} = definition,
+        json_body,
+        indexer_name,
+        template_context \\ %{},
+        base_url \\ ""
+      ) do
     with {:ok, json} <- Jason.decode(json_body),
          {:ok, rows} <- extract_json_rows(json, definition.search) do
       Logger.info("[#{indexer_name}] Extracted #{length(rows)} rows from JSON")
@@ -183,7 +198,7 @@ defmodule Mydia.Indexers.CardigannResultParser do
       case parse_json_row_fields(rows, definition.search, template_context) do
         {:ok, parsed_rows} ->
           Logger.info("[#{indexer_name}] Parsed #{length(parsed_rows)} JSON rows successfully")
-          results = transform_to_search_results(parsed_rows, indexer_name)
+          results = transform_to_search_results(parsed_rows, indexer_name, base_url)
           Logger.info("[#{indexer_name}] Transformed to #{length(results)} search results")
           {:ok, results}
 
@@ -218,17 +233,19 @@ defmodule Mydia.Indexers.CardigannResultParser do
   - `{:ok, results}` - List of SearchResult structs
   - `{:error, reason}` - Parsing error
   """
-  @spec parse_json_results_from_map(Parsed.t(), map(), String.t(), map()) :: parse_result()
+  @spec parse_json_results_from_map(Parsed.t(), map(), String.t(), map(), String.t()) ::
+          parse_result()
   def parse_json_results_from_map(
         %Parsed{} = definition,
         json,
         indexer_name,
-        template_context \\ %{}
+        template_context \\ %{},
+        base_url \\ ""
       )
       when is_map(json) do
     with {:ok, rows} <- extract_json_rows(json, definition.search),
          {:ok, parsed_rows} <- parse_json_row_fields(rows, definition.search, template_context) do
-      results = transform_to_search_results(parsed_rows, indexer_name)
+      results = transform_to_search_results(parsed_rows, indexer_name, base_url)
       {:ok, results}
     end
   rescue
@@ -749,13 +766,13 @@ defmodule Mydia.Indexers.CardigannResultParser do
 
   # Result Transformation
 
-  defp transform_to_search_results(parsed_rows, indexer_name) do
+  defp transform_to_search_results(parsed_rows, indexer_name, base_url) do
     parsed_rows
-    |> Enum.map(fn row -> transform_to_search_result(row, indexer_name) end)
+    |> Enum.map(fn row -> transform_to_search_result(row, indexer_name, base_url) end)
     |> Enum.filter(&(&1 != nil))
   end
 
-  defp transform_to_search_result(row, indexer_name) do
+  defp transform_to_search_result(row, indexer_name, base_url) do
     with {:ok, title} <- get_required_field(row, "title"),
          {:ok, download_url} <- get_required_field(row, "download"),
          size <- parse_size(get_field(row, "size", "0")),
@@ -764,23 +781,71 @@ defmodule Mydia.Indexers.CardigannResultParser do
       # Parse quality from title
       quality = QualityParser.parse(title)
 
+      # Resolve relative URLs to absolute
+      resolved_download_url = resolve_url(download_url, base_url)
+      resolved_info_url = resolve_url(get_field(row, "details"), base_url)
+
+      # Detect download protocol from URL
+      download_protocol = detect_download_protocol(resolved_download_url)
+
       # Build SearchResult
       %SearchResult{
         title: title,
         size: size,
         seeders: seeders,
         leechers: leechers,
-        download_url: download_url,
-        info_url: get_field(row, "details"),
+        download_url: resolved_download_url,
+        info_url: resolved_info_url,
         indexer: indexer_name,
         category: parse_integer(get_field(row, "category")),
         published_at: parse_date(get_field(row, "date")),
         quality: quality,
         tmdb_id: parse_integer(get_field(row, "tmdbid")),
-        imdb_id: get_field(row, "imdbid")
+        imdb_id: get_field(row, "imdbid"),
+        download_protocol: download_protocol
       }
     else
       _ -> nil
+    end
+  end
+
+  # Resolve a URL relative to a base URL
+  defp resolve_url(nil, _base_url), do: nil
+  defp resolve_url("", _base_url), do: nil
+
+  defp resolve_url(url, base_url) when is_binary(url) do
+    cond do
+      # Already absolute (http, https, magnet, etc.)
+      String.match?(url, ~r/^[a-zA-Z][a-zA-Z0-9+.-]*:/) ->
+        url
+
+      # Protocol-relative URL (//example.com/path)
+      String.starts_with?(url, "//") ->
+        "https:" <> url
+
+      # Absolute path (/path/to/file)
+      String.starts_with?(url, "/") ->
+        case URI.parse(base_url) do
+          %URI{scheme: scheme, host: host, port: port} when not is_nil(host) ->
+            port_str = if port && port not in [80, 443], do: ":#{port}", else: ""
+            "#{scheme || "https"}://#{host}#{port_str}#{url}"
+
+          _ ->
+            # Can't resolve, return as-is
+            url
+        end
+
+      # Relative path (path/to/file or file.ext)
+      true ->
+        case base_url do
+          "" ->
+            url
+
+          base when is_binary(base) ->
+            # Ensure base URL doesn't end with a slash for clean joining
+            base_trimmed = String.trim_trailing(base, "/")
+            "#{base_trimmed}/#{url}"
+        end
     end
   end
 
@@ -908,6 +973,21 @@ defmodule Mydia.Indexers.CardigannResultParser do
   rescue
     _ -> nil
   end
+
+  # Download Protocol Detection
+  # Detects protocol from URL: magnet/.torrent → :torrent, .nzb → :nzb
+  # Defaults to :torrent as most Cardigann indexers are torrent sites
+  defp detect_download_protocol(url) when is_binary(url) do
+    cond do
+      String.starts_with?(url, "magnet:") -> :torrent
+      String.contains?(url, ".torrent") -> :torrent
+      String.contains?(url, ".nzb") -> :nzb
+      String.contains?(url, "nzb") -> :nzb
+      true -> :torrent
+    end
+  end
+
+  defp detect_download_protocol(_), do: :torrent
 
   # Response Type Detection
 

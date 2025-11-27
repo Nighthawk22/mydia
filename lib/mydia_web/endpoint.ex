@@ -11,6 +11,11 @@ defmodule MydiaWeb.Endpoint do
     same_site: "Lax"
   ]
 
+  # Enable SQL sandbox for browser-based feature tests (Wallaby)
+  # This allows browser requests to participate in the test transaction
+  # The plug only activates when sandbox metadata is present in the request
+  plug Phoenix.Ecto.SQL.Sandbox
+
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]

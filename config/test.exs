@@ -75,8 +75,10 @@ config :mydia, Oban,
   plugins: false
 
 # Disable health monitoring processes in test mode
+# Enable SQL sandbox for Wallaby browser tests
 config :mydia,
-  start_health_monitors: false
+  start_health_monitors: false,
+  sql_sandbox: true
 
 # Wallaby configuration for browser-based feature tests
 # Uses Chrome/Chromium in headless mode
@@ -91,6 +93,7 @@ wallaby_chromedriver_opts =
 
 config :wallaby,
   driver: Wallaby.Chrome,
+  base_url: "http://localhost:4002",
   screenshot_on_failure: true,
   screenshot_dir: "tmp/wallaby_screenshots",
   chromedriver: wallaby_chromedriver_opts

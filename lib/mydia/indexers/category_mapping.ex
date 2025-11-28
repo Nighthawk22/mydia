@@ -1,0 +1,388 @@
+defmodule Mydia.Indexers.CategoryMapping do
+  @moduledoc """
+  Maps library types to Torznab standard categories for torrent searches.
+
+  Torznab categories follow Newznab standard numbering:
+  - 1000-1999: Console (games)
+  - 2000-2999: Movies
+  - 3000-3999: Audio/Music
+  - 4000-4999: PC (software/games)
+  - 5000-5999: TV
+  - 6000-6999: XXX/Adult
+  - 7000-7999: Books/Ebooks
+  - 8000-8999: Other
+
+  Both Prowlarr and Jackett use this standard category numbering.
+  """
+
+  # Torznab standard category IDs
+  # Movies (2000-2999)
+  @movies_parent 2000
+  @movies_foreign 2010
+  @movies_other 2020
+  @movies_sd 2030
+  @movies_hd 2040
+  @movies_uhd 2045
+  @movies_bluray 2050
+  @movies_3d 2060
+  @movies_dvd 2070
+
+  # Audio/Music (3000-3999)
+  @audio_parent 3000
+  @audio_mp3 3010
+  @audio_video 3020
+  @audio_audiobook 3030
+  @audio_lossless 3040
+  @audio_other 3050
+  @audio_foreign 3060
+
+  # TV (5000-5999)
+  @tv_parent 5000
+  @tv_webdl 5010
+  @tv_foreign 5020
+  @tv_sd 5030
+  @tv_hd 5040
+  @tv_uhd 5045
+  @tv_other 5050
+  @tv_sport 5060
+  @tv_anime 5070
+  @tv_documentary 5080
+
+  # Adult/XXX (6000-6999)
+  @xxx_parent 6000
+  @xxx_dvd 6010
+  @xxx_wmv 6020
+  @xxx_xvid 6030
+  @xxx_x264 6040
+  @xxx_uhd 6045
+  @xxx_pack 6050
+  @xxx_imageset 6060
+  @xxx_packs 6070
+  @xxx_sd 6080
+  @xxx_webdl 6090
+
+  # Books (7000-7999)
+  @books_parent 7000
+  @books_foreign 7010
+  @books_ebook 7020
+  @books_comics 7030
+  @books_magazines 7040
+  @books_technical 7050
+  @books_other 7060
+  @books_audiobook 7070
+
+  # Other (8000-8999)
+  @other_parent 8000
+  @other_misc 8010
+  @other_hashed 8020
+
+  @doc """
+  Returns all category IDs for the given library type.
+
+  ## Parameters
+    - library_type: One of :movies, :series, :mixed, :music, :books, :adult
+
+  ## Returns
+    - List of Torznab category IDs
+
+  ## Examples
+
+      iex> CategoryMapping.categories_for_type(:movies)
+      [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070]
+
+      iex> CategoryMapping.categories_for_type(:music)
+      [3000, 3010, 3020, 3030, 3040, 3050, 3060]
+
+      iex> CategoryMapping.categories_for_type(:adult)
+      [6000, 6010, 6020, 6030, 6040, 6045, 6050, 6060, 6070, 6080, 6090]
+  """
+  @spec categories_for_type(atom()) :: [integer()]
+  def categories_for_type(:movies) do
+    [
+      @movies_parent,
+      @movies_foreign,
+      @movies_other,
+      @movies_sd,
+      @movies_hd,
+      @movies_uhd,
+      @movies_bluray,
+      @movies_3d,
+      @movies_dvd
+    ]
+  end
+
+  def categories_for_type(:series) do
+    [
+      @tv_parent,
+      @tv_webdl,
+      @tv_foreign,
+      @tv_sd,
+      @tv_hd,
+      @tv_uhd,
+      @tv_other,
+      @tv_sport,
+      @tv_anime,
+      @tv_documentary
+    ]
+  end
+
+  def categories_for_type(:music) do
+    [
+      @audio_parent,
+      @audio_mp3,
+      @audio_video,
+      @audio_audiobook,
+      @audio_lossless,
+      @audio_other,
+      @audio_foreign
+    ]
+  end
+
+  def categories_for_type(:books) do
+    [
+      @books_parent,
+      @books_foreign,
+      @books_ebook,
+      @books_comics,
+      @books_magazines,
+      @books_technical,
+      @books_other,
+      @books_audiobook
+    ]
+  end
+
+  def categories_for_type(:adult) do
+    [
+      @xxx_parent,
+      @xxx_dvd,
+      @xxx_wmv,
+      @xxx_xvid,
+      @xxx_x264,
+      @xxx_uhd,
+      @xxx_pack,
+      @xxx_imageset,
+      @xxx_packs,
+      @xxx_sd,
+      @xxx_webdl
+    ]
+  end
+
+  # Mixed library type searches across all video content
+  def categories_for_type(:mixed) do
+    categories_for_type(:movies) ++ categories_for_type(:series)
+  end
+
+  # Unknown types return empty list (no category filter)
+  def categories_for_type(_), do: []
+
+  @doc """
+  Returns the parent category ID for a library type.
+
+  Useful when you want to search just the main category without subcategories.
+
+  ## Examples
+
+      iex> CategoryMapping.parent_category(:movies)
+      2000
+
+      iex> CategoryMapping.parent_category(:music)
+      3000
+  """
+  @spec parent_category(atom()) :: integer() | nil
+  def parent_category(:movies), do: @movies_parent
+  def parent_category(:series), do: @tv_parent
+  def parent_category(:music), do: @audio_parent
+  def parent_category(:books), do: @books_parent
+  def parent_category(:adult), do: @xxx_parent
+  def parent_category(:mixed), do: nil
+  def parent_category(_), do: nil
+
+  @doc """
+  Returns category name for a given category ID.
+
+  ## Examples
+
+      iex> CategoryMapping.category_name(2000)
+      "Movies"
+
+      iex> CategoryMapping.category_name(3040)
+      "Audio/Lossless"
+  """
+  @spec category_name(integer()) :: String.t()
+  def category_name(id) when is_integer(id) do
+    case id do
+      # Movies
+      @movies_parent -> "Movies"
+      @movies_foreign -> "Movies/Foreign"
+      @movies_other -> "Movies/Other"
+      @movies_sd -> "Movies/SD"
+      @movies_hd -> "Movies/HD"
+      @movies_uhd -> "Movies/UHD"
+      @movies_bluray -> "Movies/BluRay"
+      @movies_3d -> "Movies/3D"
+      @movies_dvd -> "Movies/DVD"
+      # Audio
+      @audio_parent -> "Audio"
+      @audio_mp3 -> "Audio/MP3"
+      @audio_video -> "Audio/Video"
+      @audio_audiobook -> "Audio/Audiobook"
+      @audio_lossless -> "Audio/Lossless"
+      @audio_other -> "Audio/Other"
+      @audio_foreign -> "Audio/Foreign"
+      # TV
+      @tv_parent -> "TV"
+      @tv_webdl -> "TV/WEB-DL"
+      @tv_foreign -> "TV/Foreign"
+      @tv_sd -> "TV/SD"
+      @tv_hd -> "TV/HD"
+      @tv_uhd -> "TV/UHD"
+      @tv_other -> "TV/Other"
+      @tv_sport -> "TV/Sport"
+      @tv_anime -> "TV/Anime"
+      @tv_documentary -> "TV/Documentary"
+      # Adult
+      @xxx_parent -> "XXX"
+      @xxx_dvd -> "XXX/DVD"
+      @xxx_wmv -> "XXX/WMV"
+      @xxx_xvid -> "XXX/XviD"
+      @xxx_x264 -> "XXX/x264"
+      @xxx_uhd -> "XXX/UHD"
+      @xxx_pack -> "XXX/Pack"
+      @xxx_imageset -> "XXX/ImageSet"
+      @xxx_packs -> "XXX/Packs"
+      @xxx_sd -> "XXX/SD"
+      @xxx_webdl -> "XXX/WEB-DL"
+      # Books
+      @books_parent -> "Books"
+      @books_foreign -> "Books/Foreign"
+      @books_ebook -> "Books/EBook"
+      @books_comics -> "Books/Comics"
+      @books_magazines -> "Books/Magazines"
+      @books_technical -> "Books/Technical"
+      @books_other -> "Books/Other"
+      @books_audiobook -> "Books/Audiobook"
+      # Other
+      @other_parent -> "Other"
+      @other_misc -> "Other/Misc"
+      @other_hashed -> "Other/Hashed"
+      # Unknown
+      _ -> "Unknown (#{id})"
+    end
+  end
+
+  @doc """
+  Checks if a category ID belongs to a given library type.
+
+  ## Examples
+
+      iex> CategoryMapping.category_matches_type?(2040, :movies)
+      true
+
+      iex> CategoryMapping.category_matches_type?(5000, :movies)
+      false
+  """
+  @spec category_matches_type?(integer(), atom()) :: boolean()
+  def category_matches_type?(category_id, library_type) do
+    category_id in categories_for_type(library_type)
+  end
+
+  @doc """
+  Returns the library type for a given category ID.
+
+  ## Examples
+
+      iex> CategoryMapping.type_for_category(2040)
+      :movies
+
+      iex> CategoryMapping.type_for_category(3000)
+      :music
+  """
+  @spec type_for_category(integer()) :: atom()
+  def type_for_category(category_id) when is_integer(category_id) do
+    cond do
+      category_id >= 2000 and category_id < 3000 -> :movies
+      category_id >= 3000 and category_id < 4000 -> :music
+      category_id >= 5000 and category_id < 6000 -> :series
+      category_id >= 6000 and category_id < 7000 -> :adult
+      category_id >= 7000 and category_id < 8000 -> :books
+      true -> :other
+    end
+  end
+
+  @doc """
+  Returns all defined Torznab categories with their IDs and names.
+
+  Useful for UI displays or debugging.
+  """
+  @spec all_categories() :: [%{id: integer(), name: String.t(), type: atom()}]
+  def all_categories do
+    all_ids()
+    |> Enum.map(fn id ->
+      %{
+        id: id,
+        name: category_name(id),
+        type: type_for_category(id)
+      }
+    end)
+  end
+
+  # Private: All defined category IDs
+  defp all_ids do
+    [
+      # Movies
+      @movies_parent,
+      @movies_foreign,
+      @movies_other,
+      @movies_sd,
+      @movies_hd,
+      @movies_uhd,
+      @movies_bluray,
+      @movies_3d,
+      @movies_dvd,
+      # Audio
+      @audio_parent,
+      @audio_mp3,
+      @audio_video,
+      @audio_audiobook,
+      @audio_lossless,
+      @audio_other,
+      @audio_foreign,
+      # TV
+      @tv_parent,
+      @tv_webdl,
+      @tv_foreign,
+      @tv_sd,
+      @tv_hd,
+      @tv_uhd,
+      @tv_other,
+      @tv_sport,
+      @tv_anime,
+      @tv_documentary,
+      # Adult
+      @xxx_parent,
+      @xxx_dvd,
+      @xxx_wmv,
+      @xxx_xvid,
+      @xxx_x264,
+      @xxx_uhd,
+      @xxx_pack,
+      @xxx_imageset,
+      @xxx_packs,
+      @xxx_sd,
+      @xxx_webdl,
+      # Books
+      @books_parent,
+      @books_foreign,
+      @books_ebook,
+      @books_comics,
+      @books_magazines,
+      @books_technical,
+      @books_other,
+      @books_audiobook,
+      # Other
+      @other_parent,
+      @other_misc,
+      @other_hashed
+    ]
+  end
+end

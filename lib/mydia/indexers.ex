@@ -121,6 +121,9 @@ defmodule Mydia.Indexers do
       - `:min_seeders` - Minimum seeder count filter (default: 0)
       - `:max_results` - Maximum number of results to return (default: 100)
       - `:deduplicate` - Whether to deduplicate results (default: true)
+      - `:categories` - List of Torznab category IDs to filter by (default: [])
+        Use `Mydia.Indexers.CategoryMapping.categories_for_type/1` to get categories
+        for a library type (e.g., `:movies`, `:series`, `:music`, `:books`, `:adult`)
 
   ## Examples
 
@@ -128,6 +131,11 @@ defmodule Mydia.Indexers do
       {:ok, [%SearchResult{indexer: "Prowlarr", ...}, ...]}
 
       iex> Mydia.Indexers.search_all("Ubuntu", min_seeders: 10, max_results: 50)
+      {:ok, [%SearchResult{}, ...]}
+
+      iex> alias Mydia.Indexers.CategoryMapping
+      iex> categories = CategoryMapping.categories_for_type(:music)
+      iex> Mydia.Indexers.search_all("Beatles", categories: categories)
       {:ok, [%SearchResult{}, ...]}
   """
   def search_all(query, opts \\ []) do

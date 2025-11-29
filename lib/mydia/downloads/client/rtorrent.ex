@@ -560,11 +560,13 @@ defmodule Mydia.Downloads.Client.Rtorrent do
   defp extract_array_value(body) do
     import SweetXml
 
-    # Check if response contains an array
-    array_values = xpath(body, ~x"//methodResponse/params/param/value/array/data/value"el)
+    # First check if an array element exists at all (even if empty)
+    has_array = xpath(body, ~x"//methodResponse/params/param/value/array"e) != nil
 
-    if array_values && length(array_values) > 0 do
-      Enum.map(array_values, &extract_single_array_element(body, &1))
+    if has_array do
+      # Get array values - will be empty list if no <value> elements inside
+      array_values = xpath(body, ~x"//methodResponse/params/param/value/array/data/value"el)
+      Enum.map(array_values || [], &extract_single_array_element(body, &1))
     else
       # No array found, try to return raw text
       xpath(body, ~x"//methodResponse/params/param/value/text()"s)

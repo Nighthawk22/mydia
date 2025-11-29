@@ -21,6 +21,19 @@ A modern, self-hosted media management platform for tracking, organizing, and mo
 - 🔔 **Release Calendar** – Track upcoming releases and monitor episodes
 - 🎨 **Modern Real-Time UI** – Phoenix LiveView with instant updates and responsive design
 
+## 🧪 Experimental Library Types
+
+> [!CAUTION]
+> Music, Books, and Adult libraries are **highly experimental** with minimal functionality. They support basic library scanning and browsing only—no metadata fetching, download automation, or quality profiles. Expect bugs and incomplete features.
+
+| Library Type | Status | What Works | What Doesn't |
+|-------------|--------|------------|--------------|
+| **Music** | 🧪 Experimental | File scanning, artist/album/track browsing | Metadata enrichment, downloads |
+| **Books** | 🧪 Experimental | File scanning, author/book browsing | Metadata enrichment, downloads |
+| **Adult** | 🧪 Experimental | File scanning, basic browsing | Metadata enrichment, downloads |
+
+Configure library paths via Admin UI or environment variables (see [Library Path Configuration](#library-path-configuration)).
+
 ## 🆚 Comparison with Radarr & Sonarr
 
 | Feature | Mydia | Radarr | Sonarr |
@@ -466,6 +479,30 @@ See [DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md) for advanced deployment topic
 | `MOVIES_PATH`               | Movies directory path       | `/media/movies` |
 | `TV_PATH`                   | TV shows directory path     | `/media/tv`     |
 | `MEDIA_SCAN_INTERVAL_HOURS` | Hours between library scans | `1`             |
+
+### Library Path Configuration
+
+Configure additional library paths using numbered environment variables (`<N>` = 1, 2, 3, etc.):
+
+| Variable Pattern                   | Description                                            | Example        |
+| ---------------------------------- | ------------------------------------------------------ | -------------- |
+| `LIBRARY_PATH_<N>_PATH`            | Directory path                                         | `/media/music` |
+| `LIBRARY_PATH_<N>_TYPE`            | Library type (movies, series, mixed, music, books, adult) | `music`        |
+| `LIBRARY_PATH_<N>_MONITORED`       | Enable monitoring                                      | `true`         |
+| `LIBRARY_PATH_<N>_SCAN_INTERVAL`   | Scan interval in seconds                               | `3600`         |
+| `LIBRARY_PATH_<N>_QUALITY_PROFILE_ID` | Quality profile ID                                  | `1`            |
+
+Example for music and books libraries:
+
+```bash
+LIBRARY_PATH_1_PATH=/media/music
+LIBRARY_PATH_1_TYPE=music
+
+LIBRARY_PATH_2_PATH=/media/books
+LIBRARY_PATH_2_TYPE=books
+```
+
+> **Note:** Library paths configured via environment variables are registered in the database on startup. If you later remove the environment variables, the libraries remain in the database as disabled entries to maintain data consistency. Currently there is no way to remove these entries via the Admin UI—this will be improved in a future release.
 
 ### Authentication
 

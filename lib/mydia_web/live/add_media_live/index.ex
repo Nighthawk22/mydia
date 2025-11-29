@@ -81,8 +81,6 @@ defmodule MydiaWeb.AddMediaLive.Index do
   end
 
   def handle_event("update_toolbar", params, socket) do
-    IO.inspect(params, label: "UPDATE_TOOLBAR")
-
     # Extract which field changed from _target
     target = params["_target"] |> List.first()
 
@@ -279,22 +277,13 @@ defmodule MydiaWeb.AddMediaLive.Index do
   defp load_toolbar_settings(socket, _media_type) do
     # Only initialize toolbar settings if not already set
     # This prevents resetting user selections when handle_params is called again
-    already_set = Map.has_key?(socket.assigns, :toolbar_library_path_id)
-    IO.inspect(already_set, label: "LOAD_TOOLBAR_SETTINGS already_set?")
-
-    if already_set do
-      IO.inspect(socket.assigns.toolbar_quality_profile_id,
-        label: "KEEPING toolbar_quality_profile_id"
-      )
-
+    if Map.has_key?(socket.assigns, :toolbar_library_path_id) do
       socket
     else
       # Set sensible defaults on first load
       # Note: IDs are stored as strings to match HTML form values
       default_profile = get_default_quality_profile(socket.assigns.quality_profiles)
       default_path = List.first(socket.assigns.library_paths)
-
-      IO.inspect("INITIALIZING TOOLBAR DEFAULTS")
 
       socket
       |> assign(:toolbar_library_path_id, default_path && to_string(default_path.id))

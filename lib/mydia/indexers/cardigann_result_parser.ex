@@ -452,10 +452,7 @@ defmodule Mydia.Indexers.CardigannResultParser do
     field_values =
       Enum.reduce(selector_fields, %{}, fn {field_name, field_config}, acc ->
         # Skip non-map configs
-        if not is_map(field_config) do
-          Logger.debug("Skipping field #{field_name}: config is not a map")
-          acc
-        else
+        if is_map(field_config) do
           is_optional =
             Map.get(field_config, :optional) || Map.get(field_config, "optional", false)
 
@@ -473,6 +470,9 @@ defmodule Mydia.Indexers.CardigannResultParser do
                 acc
               end
           end
+        else
+          Logger.debug("Skipping field #{field_name}: config is not a map")
+          acc
         end
       end)
 
@@ -481,10 +481,7 @@ defmodule Mydia.Indexers.CardigannResultParser do
     field_values =
       Enum.reduce(text_fields, field_values, fn {field_name, field_config}, acc ->
         # Skip non-map configs
-        if not is_map(field_config) do
-          Logger.debug("Skipping text field #{field_name}: config is not a map")
-          acc
-        else
+        if is_map(field_config) do
           case compute_text_field(field_config, acc, template_context) do
             {:ok, value} ->
               Map.put(acc, field_name, value)
@@ -492,6 +489,9 @@ defmodule Mydia.Indexers.CardigannResultParser do
             {:error, _reason} ->
               acc
           end
+        else
+          Logger.debug("Skipping text field #{field_name}: config is not a map")
+          acc
         end
       end)
 
@@ -637,9 +637,8 @@ defmodule Mydia.Indexers.CardigannResultParser do
     attribute = Map.get(field_config, :attribute) || Map.get(field_config, "attribute")
     filters = Map.get(field_config, :filters) || Map.get(field_config, "filters", [])
 
-    with {:ok, raw_value} <- extract_raw_value(row, selector, attribute),
-         {:ok, filtered_value} <- apply_filters(raw_value, filters, template_context) do
-      {:ok, filtered_value}
+    with {:ok, raw_value} <- extract_raw_value(row, selector, attribute) do
+      apply_filters(raw_value, filters, template_context)
     end
   end
 
@@ -993,9 +992,8 @@ defmodule Mydia.Indexers.CardigannResultParser do
     filters = Map.get(field_config, :filters) || Map.get(field_config, "filters", [])
 
     with {:ok, raw_value} <- get_json_value_by_selector(row, selector),
-         {:ok, str_value} <- ensure_string(raw_value),
-         {:ok, filtered_value} <- apply_filters(str_value, filters, template_context) do
-      {:ok, filtered_value}
+         {:ok, str_value} <- ensure_string(raw_value) do
+      apply_filters(str_value, filters, template_context)
     end
   end
 

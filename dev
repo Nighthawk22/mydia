@@ -86,14 +86,9 @@ EOF
     exit 0
 fi
 
-# Helper function to run commands in the app container
+# Helper function to run commands in an ephemeral container
 run_in_container() {
-    docker compose exec "$SERVICE_NAME" "$@"
-}
-
-# Helper function to check if service is running
-is_service_running() {
-    docker compose ps --services --filter "status=running" | grep -q "^${SERVICE_NAME}$"
+    docker compose run --rm "$SERVICE_NAME" "$@"
 }
 
 # Parse command
@@ -103,45 +98,25 @@ shift
 case "$COMMAND" in
     # Interactive shell shortcuts
     shell|sh)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Opening interactive shell in $SERVICE_NAME container...${NC}"
         run_in_container sh
         ;;
 
     bash)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Opening bash shell in $SERVICE_NAME container...${NC}"
         run_in_container bash
         ;;
 
     iex)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Starting IEx in $SERVICE_NAME container...${NC}"
         run_in_container iex -S mix
         ;;
 
     # Mix command shortcuts
     mix)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         # Set MIX_ENV=test for commands that run tests
         if [[ "$1" == "precommit" ]] || [[ "$1" == "test" ]]; then
-            docker compose exec -e MIX_ENV=test "$SERVICE_NAME" mix "$@"
+            docker compose run --rm -e MIX_ENV=test "$SERVICE_NAME" mix "$@"
         else
             run_in_container mix "$@"
         fi
@@ -149,61 +124,31 @@ case "$COMMAND" in
 
     # Common development shortcuts
     test)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Running tests...${NC}"
-        docker compose exec -e MIX_ENV=test "$SERVICE_NAME" sh -c 'mix ecto.create --quiet && mix ecto.migrate --quiet && mix test '"$*"
+        docker compose run --rm -e MIX_ENV=test "$SERVICE_NAME" sh -c 'mix ecto.create --quiet && mix ecto.migrate --quiet && mix test '"$*"
         ;;
 
     format)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Formatting code...${NC}"
         run_in_container mix format
         ;;
 
     deps.get)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Installing dependencies...${NC}"
         run_in_container mix deps.get
         ;;
 
     ecto.migrate)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Running migrations...${NC}"
         run_in_container mix ecto.migrate
         ;;
 
     ecto.reset)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Resetting database...${NC}"
         run_in_container mix ecto.reset
         ;;
 
     phx.server)
-        if ! is_service_running; then
-            echo -e "${YELLOW}Service is not running. Starting it first...${NC}"
-            docker compose up -d
-            sleep 2
-        fi
         echo -e "${GREEN}Starting Phoenix server...${NC}"
         run_in_container mix phx.server
         ;;

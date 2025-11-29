@@ -795,17 +795,27 @@ defmodule MydiaWeb.AdminConfigLive.Index do
     client = Settings.get_download_client_config!(id)
 
     # Convert client config to map for adapter
-    client_config = %{
-      type: client.type,
-      host: client.host,
-      port: client.port,
-      use_ssl: client.use_ssl,
-      username: client.username,
-      password: client.password,
-      api_key: client.api_key,
-      url_base: client.url_base,
-      options: client.connection_settings || %{}
-    }
+    client_config =
+      if client.type == :blackhole do
+        # Blackhole uses connection_settings for folder paths
+        %{
+          type: :blackhole,
+          connection_settings: client.connection_settings || %{}
+        }
+      else
+        # Network-based clients
+        %{
+          type: client.type,
+          host: client.host,
+          port: client.port,
+          use_ssl: client.use_ssl,
+          username: client.username,
+          password: client.password,
+          api_key: client.api_key,
+          url_base: client.url_base,
+          options: client.connection_settings || %{}
+        }
+      end
 
     # Get the adapter and test connection
     case test_client_connection(client_config) do
@@ -864,17 +874,27 @@ defmodule MydiaWeb.AdminConfigLive.Index do
       end
 
     # Build config map for test_connection
-    test_config = %{
-      type: type,
-      host: params.host,
-      port: params.port,
-      use_ssl: params.use_ssl || false,
-      username: params.username,
-      password: params.password,
-      api_key: params.api_key,
-      url_base: params.url_base,
-      options: params.connection_settings || %{}
-    }
+    test_config =
+      if type == :blackhole do
+        # Blackhole uses connection_settings for folder paths
+        %{
+          type: :blackhole,
+          connection_settings: params.connection_settings || %{}
+        }
+      else
+        # Network-based clients
+        %{
+          type: type,
+          host: params.host,
+          port: params.port,
+          use_ssl: params.use_ssl || false,
+          username: params.username,
+          password: params.password,
+          api_key: params.api_key,
+          url_base: params.url_base,
+          options: params.connection_settings || %{}
+        }
+      end
 
     # Set loading state
     socket = assign(socket, :testing_download_client_connection, true)

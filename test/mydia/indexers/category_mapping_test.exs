@@ -215,4 +215,134 @@ defmodule Mydia.Indexers.CategoryMappingTest do
       assert :adult in types
     end
   end
+
+  describe "category_id_from_name/1" do
+    test "returns correct ID for movie categories" do
+      assert CategoryMapping.category_id_from_name("Movies") == 2000
+      assert CategoryMapping.category_id_from_name("Movies/HD") == 2040
+      assert CategoryMapping.category_id_from_name("Movies/UHD") == 2045
+      assert CategoryMapping.category_id_from_name("Movies/BluRay") == 2050
+      assert CategoryMapping.category_id_from_name("Movies/SD") == 2030
+    end
+
+    test "returns correct ID for TV categories" do
+      assert CategoryMapping.category_id_from_name("TV") == 5000
+      assert CategoryMapping.category_id_from_name("TV/HD") == 5040
+      assert CategoryMapping.category_id_from_name("TV/Anime") == 5070
+      assert CategoryMapping.category_id_from_name("TV/Documentary") == 5080
+      assert CategoryMapping.category_id_from_name("TV/SD") == 5030
+    end
+
+    test "returns correct ID for audio categories" do
+      assert CategoryMapping.category_id_from_name("Audio") == 3000
+      assert CategoryMapping.category_id_from_name("Audio/MP3") == 3010
+      assert CategoryMapping.category_id_from_name("Audio/Lossless") == 3040
+      assert CategoryMapping.category_id_from_name("Music") == 3000
+      assert CategoryMapping.category_id_from_name("Music/Lossless") == 3040
+    end
+
+    test "returns correct ID for book categories" do
+      assert CategoryMapping.category_id_from_name("Books") == 7000
+      assert CategoryMapping.category_id_from_name("Books/EBook") == 7020
+      assert CategoryMapping.category_id_from_name("Books/Comics") == 7030
+    end
+
+    test "returns correct ID for adult categories" do
+      assert CategoryMapping.category_id_from_name("XXX") == 6000
+      assert CategoryMapping.category_id_from_name("XXX/DVD") == 6010
+      assert CategoryMapping.category_id_from_name("XXX/Video") == 6010
+    end
+
+    test "handles case-insensitive lookups" do
+      assert CategoryMapping.category_id_from_name("movies/hd") == 2040
+      assert CategoryMapping.category_id_from_name("MOVIES/HD") == 2040
+      assert CategoryMapping.category_id_from_name("Movies/HD") == 2040
+    end
+
+    test "handles common 1337x category names" do
+      # These are actual category names from 1337x definition
+      assert CategoryMapping.category_id_from_name("Movies/Divx/Xvid") == 2030
+      assert CategoryMapping.category_id_from_name("Movies/h.264/x264") == 2040
+      assert CategoryMapping.category_id_from_name("Movies/HEVC/x265") == 2040
+      assert CategoryMapping.category_id_from_name("TV/HEVC/x265") == 5040
+      assert CategoryMapping.category_id_from_name("TV/Cartoons") == 5070
+    end
+
+    test "returns nil for unknown categories" do
+      assert CategoryMapping.category_id_from_name("Unknown/Category") == nil
+      assert CategoryMapping.category_id_from_name("NonExistent") == nil
+    end
+
+    test "returns nil for non-string input" do
+      assert CategoryMapping.category_id_from_name(nil) == nil
+      assert CategoryMapping.category_id_from_name(123) == nil
+    end
+  end
+
+  describe "map_site_category_to_torznab/2" do
+    test "maps site category ID to Torznab category using mappings" do
+      # Example 1337x category mappings
+      mappings = [
+        %{"id" => 42, "cat" => "Movies/HD"},
+        %{"id" => 1, "cat" => "Movies/DVD"},
+        %{"id" => 5, "cat" => "TV"},
+        %{"id" => 41, "cat" => "TV/HD"},
+        %{"id" => 28, "cat" => "TV/Anime"}
+      ]
+
+      assert CategoryMapping.map_site_category_to_torznab("42", mappings) == 2040
+      assert CategoryMapping.map_site_category_to_torznab("1", mappings) == 2070
+      assert CategoryMapping.map_site_category_to_torznab("5", mappings) == 5000
+      assert CategoryMapping.map_site_category_to_torznab("41", mappings) == 5040
+      assert CategoryMapping.map_site_category_to_torznab("28", mappings) == 5070
+    end
+
+    test "handles integer site category IDs" do
+      mappings = [%{"id" => 42, "cat" => "Movies/HD"}]
+
+      assert CategoryMapping.map_site_category_to_torznab(42, mappings) == 2040
+    end
+
+    test "handles atom keys in mappings" do
+      mappings = [%{id: 42, cat: "Movies/HD"}]
+
+      assert CategoryMapping.map_site_category_to_torznab("42", mappings) == 2040
+    end
+
+    test "returns nil for unknown site category ID" do
+      mappings = [%{"id" => 42, "cat" => "Movies/HD"}]
+
+      assert CategoryMapping.map_site_category_to_torznab("999", mappings) == nil
+    end
+
+    test "returns nil for nil inputs" do
+      mappings = [%{"id" => 42, "cat" => "Movies/HD"}]
+
+      assert CategoryMapping.map_site_category_to_torznab(nil, mappings) == nil
+      assert CategoryMapping.map_site_category_to_torznab("42", nil) == nil
+    end
+
+    test "returns nil for empty mappings" do
+      assert CategoryMapping.map_site_category_to_torznab("42", []) == nil
+    end
+
+    test "handles real 1337x category mappings" do
+      # Actual mappings from 1337x Cardigann definition
+      mappings = [
+        %{"id" => 28, "cat" => "TV/Anime", "desc" => "Anime/Anime"},
+        %{"id" => 42, "cat" => "Movies/HD", "desc" => "Movies/HD"},
+        %{"id" => 76, "cat" => "Movies/UHD", "desc" => "Movies/UHD"},
+        %{"id" => 41, "cat" => "TV/HD", "desc" => "TV/HD"},
+        %{"id" => 22, "cat" => "Audio/MP3", "desc" => "Music/MP3"},
+        %{"id" => 23, "cat" => "Audio/Lossless", "desc" => "Music/Lossless"}
+      ]
+
+      assert CategoryMapping.map_site_category_to_torznab("28", mappings) == 5070
+      assert CategoryMapping.map_site_category_to_torznab("42", mappings) == 2040
+      assert CategoryMapping.map_site_category_to_torznab("76", mappings) == 2045
+      assert CategoryMapping.map_site_category_to_torznab("41", mappings) == 5040
+      assert CategoryMapping.map_site_category_to_torznab("22", mappings) == 3010
+      assert CategoryMapping.map_site_category_to_torznab("23", mappings) == 3040
+    end
+  end
 end

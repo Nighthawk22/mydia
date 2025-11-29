@@ -310,6 +310,207 @@ defmodule Mydia.Indexers.CategoryMapping do
   end
 
   @doc """
+  Returns the Torznab category ID for a category name.
+
+  This is used to convert Cardigann category names (like "Movies/HD" or "TV/Anime")
+  to their standard Torznab numeric IDs.
+
+  ## Examples
+
+      iex> CategoryMapping.category_id_from_name("Movies/HD")
+      2040
+
+      iex> CategoryMapping.category_id_from_name("TV/Anime")
+      5070
+
+      iex> CategoryMapping.category_id_from_name("Unknown")
+      nil
+  """
+  @spec category_id_from_name(String.t()) :: integer() | nil
+  def category_id_from_name(name) when is_binary(name) do
+    # Normalize the name for lookup (case-insensitive)
+    normalized = String.downcase(name)
+
+    case normalized do
+      # Movies
+      "movies" -> @movies_parent
+      "movies/foreign" -> @movies_foreign
+      "movies/other" -> @movies_other
+      "movies/sd" -> @movies_sd
+      "movies/hd" -> @movies_hd
+      "movies/uhd" -> @movies_uhd
+      "movies/bluray" -> @movies_bluray
+      "movies/blu-ray" -> @movies_bluray
+      "movies/3d" -> @movies_3d
+      "movies/dvd" -> @movies_dvd
+      "movies/divx/xvid" -> @movies_sd
+      "movies/h.264/x264" -> @movies_hd
+      "movies/hevc/x265" -> @movies_hd
+      "movies/mp4" -> @movies_sd
+      "movies/dubs/dual audio" -> @movies_foreign
+      "movies/bollywood" -> @movies_foreign
+      "movies/svcd/vcd" -> @movies_sd
+      # Audio
+      "audio" -> @audio_parent
+      "audio/mp3" -> @audio_mp3
+      "audio/video" -> @audio_video
+      "audio/audiobook" -> @audio_audiobook
+      "audio/lossless" -> @audio_lossless
+      "audio/other" -> @audio_other
+      "audio/foreign" -> @audio_foreign
+      "music" -> @audio_parent
+      "music/mp3" -> @audio_mp3
+      "music/lossless" -> @audio_lossless
+      "music/video" -> @audio_video
+      "music/dvd" -> @audio_parent
+      "music/radio" -> @audio_other
+      "music/other" -> @audio_other
+      "music/album" -> @audio_parent
+      "music/box set" -> @audio_parent
+      "music/discography" -> @audio_parent
+      "music/single" -> @audio_parent
+      "music/concerts" -> @audio_video
+      "music/aac" -> @audio_mp3
+      # TV
+      "tv" -> @tv_parent
+      "tv/web-dl" -> @tv_webdl
+      "tv/webdl" -> @tv_webdl
+      "tv/foreign" -> @tv_foreign
+      "tv/sd" -> @tv_sd
+      "tv/hd" -> @tv_hd
+      "tv/uhd" -> @tv_uhd
+      "tv/other" -> @tv_other
+      "tv/sport" -> @tv_sport
+      "tv/anime" -> @tv_anime
+      "tv/documentary" -> @tv_documentary
+      "tv/dvd" -> @tv_parent
+      "tv/divx/xvid" -> @tv_sd
+      "tv/svcd/vcd" -> @tv_sd
+      "tv/hevc/x265" -> @tv_hd
+      "tv/cartoons" -> @tv_anime
+      # Adult
+      "xxx" -> @xxx_parent
+      "xxx/dvd" -> @xxx_dvd
+      "xxx/wmv" -> @xxx_wmv
+      "xxx/xvid" -> @xxx_xvid
+      "xxx/x264" -> @xxx_x264
+      "xxx/uhd" -> @xxx_uhd
+      "xxx/pack" -> @xxx_pack
+      "xxx/imageset" -> @xxx_imageset
+      "xxx/packs" -> @xxx_packs
+      "xxx/sd" -> @xxx_sd
+      "xxx/web-dl" -> @xxx_webdl
+      "xxx/video" -> @xxx_dvd
+      "xxx/picture" -> @xxx_imageset
+      "xxx/magazine" -> @xxx_parent
+      "xxx/hentai" -> @xxx_parent
+      "xxx/games" -> @xxx_parent
+      # Books
+      "books" -> @books_parent
+      "books/foreign" -> @books_foreign
+      "books/ebook" -> @books_ebook
+      "books/comics" -> @books_comics
+      "books/magazines" -> @books_magazines
+      "books/technical" -> @books_technical
+      "books/other" -> @books_other
+      "books/audiobook" -> @books_audiobook
+      # Other
+      "other" -> @other_parent
+      "other/misc" -> @other_misc
+      "other/hashed" -> @other_hashed
+      "other/emulation" -> @other_parent
+      "other/tutorial" -> @books_parent
+      "other/sounds" -> @audio_other
+      "other/e-books" -> @books_ebook
+      "other/images" -> @other_parent
+      "other/mobile phone" -> @other_parent
+      "other/comics" -> @books_comics
+      "other/other" -> @other_misc
+      "other/nulled script" -> @other_parent
+      "other/audiobook" -> @audio_audiobook
+      # PC/Console categories (mapped to Other for now)
+      "pc" -> @other_parent
+      "pc/games" -> @other_parent
+      "pc/mac" -> @other_parent
+      "pc/mobile-android" -> @other_parent
+      "pc/mobile-ios" -> @other_parent
+      "pc/mobile-other" -> @other_parent
+      "console" -> @other_parent
+      "console/ps3" -> @other_parent
+      "console/ps4" -> @other_parent
+      "console/psp" -> @other_parent
+      "console/xbox" -> @other_parent
+      "console/xbox 360" -> @other_parent
+      "console/wii" -> @other_parent
+      "console/nds" -> @other_parent
+      "console/3ds" -> @other_parent
+      "console/other" -> @other_parent
+      # Not found
+      _ -> nil
+    end
+  end
+
+  def category_id_from_name(_), do: nil
+
+  @doc """
+  Maps a site-specific category ID to a Torznab category ID using the provided category mappings.
+
+  ## Parameters
+    - site_category_id: The site-specific category ID (as string or integer)
+    - category_mappings: List of category mapping entries from the Cardigann definition
+
+  ## Returns
+    - The Torznab category ID, or nil if no mapping found
+
+  ## Examples
+
+      iex> mappings = [%{"id" => 42, "cat" => "Movies/HD"}]
+      iex> CategoryMapping.map_site_category_to_torznab("42", mappings)
+      2040
+
+      iex> CategoryMapping.map_site_category_to_torznab("999", mappings)
+      nil
+  """
+  @spec map_site_category_to_torznab(String.t() | integer() | nil, list()) :: integer() | nil
+  def map_site_category_to_torznab(nil, _mappings), do: nil
+  def map_site_category_to_torznab(_site_id, nil), do: nil
+  def map_site_category_to_torznab(_site_id, []), do: nil
+
+  def map_site_category_to_torznab(site_category_id, category_mappings) do
+    # Normalize site_category_id to string for comparison
+    site_id_str = to_string(site_category_id)
+    site_id_int = parse_category_id(site_category_id)
+
+    # Find matching category mapping
+    mapping =
+      Enum.find(category_mappings, fn mapping ->
+        mapping_id = Map.get(mapping, "id") || Map.get(mapping, :id)
+        to_string(mapping_id) == site_id_str || mapping_id == site_id_int
+      end)
+
+    case mapping do
+      nil ->
+        nil
+
+      mapping ->
+        # Get the Torznab category name and convert to ID
+        cat_name = Map.get(mapping, "cat") || Map.get(mapping, :cat)
+        category_id_from_name(cat_name)
+    end
+  end
+
+  defp parse_category_id(id) when is_integer(id), do: id
+
+  defp parse_category_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {num, _} -> num
+      :error -> nil
+    end
+  end
+
+  defp parse_category_id(_), do: nil
+
+  @doc """
   Returns all defined Torznab categories with their IDs and names.
 
   Useful for UI displays or debugging.

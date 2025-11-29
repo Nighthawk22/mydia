@@ -736,6 +736,7 @@ defmodule Mydia.Downloads do
       download_client_id: client_id,
       media_item_id: Keyword.get(opts, :media_item_id),
       episode_id: Keyword.get(opts, :episode_id),
+      library_path_id: Keyword.get(opts, :library_path_id),
       metadata: metadata
     }
 
@@ -1015,7 +1016,25 @@ defmodule Mydia.Downloads do
               "File type detection: is_nzb=#{is_nzb}, is_torrent=#{is_torrent}, detected_type=#{inspect(detected_type)}"
             )
 
-            {:ok, {:file, body, detected_type}}
+            # If we got HTML content (detected_type=nil), try to extract magnet link
+            if detected_type == nil do
+              case extract_magnet_from_html(body) do
+                {:ok, magnet_url} ->
+                  Logger.info("Extracted magnet link from HTML page")
+                  {:ok, {:magnet, magnet_url}}
+
+                {:error, :no_magnet_found} ->
+                  Logger.error(
+                    "Downloaded HTML content but no magnet link found. Page may require further navigation."
+                  )
+
+                  {:error,
+                   {:download_failed,
+                    "Downloaded page is HTML, not a torrent file. No magnet link found on page."}}
+              end
+            else
+              {:ok, {:file, body, detected_type}}
+            end
 
           {:ok, %{status: status, body: body}} ->
             # Log the response body for debugging - it often contains error details
@@ -1104,7 +1123,25 @@ defmodule Mydia.Downloads do
                 "FlareSolverr file type detection: detected_type=#{inspect(detected_type)}"
               )
 
-              {:ok, {:file, body, detected_type}}
+              # If we got HTML content (detected_type=nil), try to extract magnet link
+              if detected_type == nil do
+                case extract_magnet_from_html(body) do
+                  {:ok, magnet_url} ->
+                    Logger.info("Extracted magnet link from HTML page")
+                    {:ok, {:magnet, magnet_url}}
+
+                  {:error, :no_magnet_found} ->
+                    Logger.error(
+                      "FlareSolverr returned HTML content but no magnet link found. Page may require further navigation."
+                    )
+
+                    {:error,
+                     {:download_failed,
+                      "Downloaded page is HTML, not a torrent file. No magnet link found on page."}}
+                end
+              else
+                {:ok, {:file, body, detected_type}}
+              end
             end
           else
             Logger.error("FlareSolverr returned empty response for: #{url}")
@@ -1286,4 +1323,80 @@ defmodule Mydia.Downloads do
   end
 
   defp format_single_cookie(_), do: nil
+
+  # Extracts a magnet link from HTML content
+  # This is used when FlareSolverr returns an HTML page (e.g., 1337x torrent detail page)
+  # instead of a torrent file
+  defp extract_magnet_from_html(html) when is_binary(html) do
+    # Parse HTML and look for magnet links
+    case Floki.parse_document(html) do
+      {:ok, document} ->
+        # Try multiple strategies to find magnet links
+
+        # Strategy 1: Look for anchor tags with href starting with "magnet:"
+        magnet_links =
+          document
+          |> Floki.find("a[href^='magnet:']")
+          |> Floki.attribute("href")
+
+        # Strategy 2: Also check for data attributes or onclick handlers that might contain magnet
+        magnet_from_data =
+          if magnet_links == [] do
+            document
+            |> Floki.find("[data-href^='magnet:'], [data-url^='magnet:']")
+            |> Floki.attribute("data-href")
+            |> Kernel.++(
+              document
+              |> Floki.find("[data-href^='magnet:'], [data-url^='magnet:']")
+              |> Floki.attribute("data-url")
+            )
+          else
+            []
+          end
+
+        all_magnets = magnet_links ++ magnet_from_data
+
+        # Strategy 3: Regex fallback - look for magnet links in raw HTML
+        all_magnets =
+          if all_magnets == [] do
+            case Regex.scan(~r/magnet:\?xt=urn:[a-zA-Z0-9]+:[a-zA-Z0-9]+[^"'\s<>]*/, html) do
+              [] -> []
+              matches -> Enum.map(matches, fn [match] -> match end)
+            end
+          else
+            all_magnets
+          end
+
+        case all_magnets do
+          [magnet | _] ->
+            # Clean up the magnet link (decode HTML entities)
+            cleaned_magnet =
+              magnet
+              |> String.replace("&amp;", "&")
+              |> String.trim()
+
+            {:ok, cleaned_magnet}
+
+          [] ->
+            {:error, :no_magnet_found}
+        end
+
+      {:error, _reason} ->
+        # Try regex fallback if Floki can't parse the HTML
+        case Regex.run(~r/magnet:\?xt=urn:[a-zA-Z0-9]+:[a-zA-Z0-9]+[^"'\s<>]*/, html) do
+          [magnet | _] ->
+            cleaned_magnet =
+              magnet
+              |> String.replace("&amp;", "&")
+              |> String.trim()
+
+            {:ok, cleaned_magnet}
+
+          nil ->
+            {:error, :no_magnet_found}
+        end
+    end
+  end
+
+  defp extract_magnet_from_html(_), do: {:error, :no_magnet_found}
 end

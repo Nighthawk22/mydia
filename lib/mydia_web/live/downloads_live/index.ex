@@ -434,18 +434,21 @@ defmodule MydiaWeb.DownloadsLive.Index do
   end
 
   defp get_poster_url(download) do
+    # Check if media_item is loaded (not Ecto.Association.NotLoaded)
+    media_item = download.media_item
+
     cond do
-      is_map(download.media_item) && is_map(download.media_item.metadata) ->
-        case download.media_item.metadata do
+      is_struct(media_item, Mydia.Media.MediaItem) ->
+        case media_item.metadata do
           %{"poster_path" => path} when is_binary(path) ->
             "https://image.tmdb.org/t/p/w200#{path}"
 
           _ ->
-            "/images/no-poster.jpg"
+            "/images/no-poster.svg"
         end
 
       true ->
-        "/images/no-poster.jpg"
+        "/images/no-poster.svg"
     end
   end
 

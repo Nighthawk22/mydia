@@ -94,10 +94,23 @@ defmodule Mydia.Library.LibraryPathSync do
     # Get all library paths once (includes both database and runtime)
     all_library_paths = Settings.list_library_paths()
 
-    # Get all media files
-    media_files = Repo.all(MediaFile)
+    # Get all media files that need updating (missing library_path_id or relative_path)
+    media_files =
+      MediaFile
+      |> where([mf], is_nil(mf.library_path_id) or is_nil(mf.relative_path))
+      |> Repo.all()
 
-    stats = %{updated: 0, orphaned: 0, failed: 0}
+    stats = %{updated: 0, orphaned: 0, failed: 0, skipped: 0}
+
+    # Count already-populated files for reporting
+    already_populated_count =
+      MediaFile
+      |> where([mf], not is_nil(mf.library_path_id) and not is_nil(mf.relative_path))
+      |> Repo.aggregate(:count)
+
+    if already_populated_count > 0 do
+      Logger.info("Skipping #{already_populated_count} files that already have relative paths")
+    end
 
     stats =
       Enum.reduce(media_files, stats, fn media_file, acc ->
@@ -105,17 +118,22 @@ defmodule Mydia.Library.LibraryPathSync do
           {:ok, :updated} ->
             %{acc | updated: acc.updated + 1}
 
+          {:ok, :skipped} ->
+            %{acc | skipped: acc.skipped + 1}
+
           {:ok, :orphaned} ->
-            Logger.info("Orphaned file (no matching library path): #{media_file.path}")
+            file_path = media_file.path || media_file.relative_path || media_file.id
+            Logger.info("Orphaned file (no matching library path): #{file_path}")
             %{acc | orphaned: acc.orphaned + 1}
 
           {:error, reason} ->
-            Logger.warning("Failed to update media file #{media_file.path}: #{inspect(reason)}")
+            file_path = media_file.path || media_file.relative_path || media_file.id
+            Logger.warning("Failed to update media file #{file_path}: #{inspect(reason)}")
             %{acc | failed: acc.failed + 1}
         end
       end)
 
-    {:ok, stats}
+    {:ok, Map.put(stats, :skipped, stats.skipped + already_populated_count)}
   end
 
   @doc """
@@ -202,26 +220,66 @@ defmodule Mydia.Library.LibraryPathSync do
 
   # Populates library_path_id and relative_path for a single media file
   defp populate_media_file(media_file, all_library_paths) do
-    case find_matching_library_path(media_file.path, all_library_paths) do
-      nil ->
-        {:ok, :orphaned}
+    # Skip if already fully populated
+    if media_file.library_path_id && media_file.relative_path do
+      {:ok, :skipped}
+    else
+      # Try to find the file path - prefer absolute path, fall back to reconstructing from relative
+      file_path = get_file_path_for_matching(media_file, all_library_paths)
 
-      library_path ->
-        relative_path = calculate_relative_path(media_file.path, library_path.path)
+      case find_matching_library_path(file_path, all_library_paths) do
+        nil ->
+          {:ok, :orphaned}
 
-        # Get database ID for library path (sync to DB if needed)
-        library_path_id = get_or_create_library_path_id(library_path)
+        library_path ->
+          relative_path =
+            media_file.relative_path || calculate_relative_path(file_path, library_path.path)
 
-        media_file
-        |> Ecto.Changeset.change(%{
-          library_path_id: library_path_id,
-          relative_path: relative_path
-        })
-        |> Repo.update()
-        |> case do
-          {:ok, _} -> {:ok, :updated}
-          {:error, changeset} -> {:error, changeset}
+          # Get database ID for library path (sync to DB if needed)
+          library_path_id = get_or_create_library_path_id(library_path)
+
+          media_file
+          |> Ecto.Changeset.change(%{
+            library_path_id: library_path_id,
+            relative_path: relative_path
+          })
+          |> Repo.update()
+          |> case do
+            {:ok, _} -> {:ok, :updated}
+            {:error, changeset} -> {:error, changeset}
+          end
+      end
+    end
+  end
+
+  # Gets the file path to use for library path matching
+  # Prefers absolute path, but can reconstruct from relative_path + library_path
+  defp get_file_path_for_matching(media_file, all_library_paths) do
+    cond do
+      # Use absolute path if available
+      media_file.path && media_file.path != "" ->
+        media_file.path
+
+      # Try to reconstruct from existing library_path_id and relative_path
+      media_file.library_path_id && media_file.relative_path ->
+        case Enum.find(all_library_paths, &(&1.id == media_file.library_path_id)) do
+          nil -> nil
+          library_path -> Path.join(library_path.path, media_file.relative_path)
         end
+
+      # Try to match relative_path against all library paths
+      media_file.relative_path ->
+        # Find a library path where the relative_path exists
+        Enum.find_value(all_library_paths, fn library_path ->
+          full_path = Path.join(library_path.path, media_file.relative_path)
+
+          if File.exists?(full_path) do
+            full_path
+          end
+        end)
+
+      true ->
+        nil
     end
   end
 

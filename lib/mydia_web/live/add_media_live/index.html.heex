@@ -13,101 +13,109 @@
       </button>
     </div>
 
-    <%!-- Configuration Toolbar --%>
-    <div class="collapse collapse-arrow bg-base-100 rounded-lg mb-4 md:mb-6 shadow-lg">
-      <input type="checkbox" id="quick-add-settings-toggle" />
-      <div class="collapse-title text-sm font-semibold text-base-content/70">
-        Quick Add Settings
-      </div>
-      <div class="collapse-content">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <%!-- Root Folder --%>
-          <div class="form-control">
-            <label class="label py-1">
-              <span class="label-text text-xs">Root Folder</span>
-            </label>
-            <%= if @library_paths == [] do %>
-              <div class="text-xs text-error">No library paths configured</div>
-            <% else %>
-              <select
-                class="select select-bordered select-sm"
-                phx-change="update_toolbar"
-                phx-value-field="toolbar_library_path_id"
-              >
-                <%= for path <- @library_paths do %>
-                  <option value={path.id} selected={@toolbar_library_path_id == path.id}>
-                    {path.path}
-                  </option>
-                <% end %>
-              </select>
-            <% end %>
+    <%!-- Quick Add Toolbar --%>
+    <.form
+      for={%{}}
+      phx-change="update_toolbar"
+      id="toolbar-form"
+      class="bg-base-200 rounded-box p-3 mb-4 md:mb-6"
+    >
+      <div class="flex flex-wrap items-center gap-3">
+        <%!-- Root Folder --%>
+        <%= if @library_paths == [] do %>
+          <div class="badge badge-error gap-1">
+            <.icon name="hero-exclamation-triangle" class="w-3 h-3" /> No library paths
           </div>
-          <%!-- Quality Profile --%>
-          <div class="form-control">
-            <label class="label py-1">
-              <span class="label-text text-xs">Quality Profile</span>
-            </label>
+        <% else %>
+          <div class="join">
+            <span class="join-item btn btn-sm btn-neutral no-animation cursor-default">
+              <.icon name="hero-folder" class="w-4 h-4" />
+            </span>
             <select
-              class="select select-bordered select-sm"
-              phx-change="update_toolbar"
-              phx-value-field="toolbar_quality_profile_id"
+              name="toolbar_library_path_id"
+              class="join-item select select-sm select-bordered"
             >
-              <option value="" selected={@toolbar_quality_profile_id == nil}>Any Quality</option>
-              <%= for profile <- @quality_profiles do %>
-                <option value={profile.id} selected={@toolbar_quality_profile_id == profile.id}>
-                  {profile.name}
+              <%= for path <- @library_paths do %>
+                <option value={path.id} selected={@toolbar_library_path_id == to_string(path.id)}>
+                  {path.path}
                 </option>
               <% end %>
             </select>
           </div>
-          <%!-- Monitor Toggle --%>
-          <div class="form-control">
-            <label class="label py-1">
-              <span class="label-text text-xs">Monitor</span>
-            </label>
-            <div class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                class="toggle toggle-primary toggle-sm"
-                checked={@toolbar_monitored}
-                phx-click="update_toolbar"
-                phx-value-field="toolbar_monitored"
-                phx-value-value={to_string(!@toolbar_monitored)}
-              />
-              <span class="text-xs">
-                {(@toolbar_monitored && "Monitored") || "Unmonitored"}
-              </span>
-            </div>
-          </div>
+        <% end %>
+
+        <%!-- Quality Profile --%>
+        <div class="join">
+          <span class="join-item btn btn-sm btn-neutral no-animation cursor-default">
+            <.icon name="hero-adjustments-horizontal" class="w-4 h-4" />
+          </span>
+          <select
+            name="toolbar_quality_profile_id"
+            class="join-item select select-sm select-bordered"
+          >
+            <option
+              value=""
+              selected={@toolbar_quality_profile_id == nil || @toolbar_quality_profile_id == ""}
+            >
+              Any Quality
+            </option>
+            <%= for profile <- @quality_profiles do %>
+              <option
+                value={profile.id}
+                selected={@toolbar_quality_profile_id == to_string(profile.id)}
+              >
+                {profile.name}
+              </option>
+            <% end %>
+          </select>
         </div>
-        <%!-- Season Monitoring for TV Shows --%>
+
+        <%!-- Season Monitoring (TV Shows only) --%>
         <%= if @media_type == :tv_show do %>
-          <div class="form-control mt-4 max-w-xs">
-            <label class="label py-1">
-              <span class="label-text text-xs">Season Monitoring</span>
-            </label>
+          <div class="join">
+            <span class="join-item btn btn-sm btn-neutral no-animation cursor-default">
+              <.icon name="hero-calendar" class="w-4 h-4" />
+            </span>
             <select
-              class="select select-bordered select-sm"
-              phx-change="update_toolbar"
-              phx-value-field="toolbar_season_monitoring"
+              name="toolbar_season_monitoring"
+              class="join-item select select-sm select-bordered"
             >
               <option value="all" selected={@toolbar_season_monitoring == "all"}>
-                Monitor All Seasons
+                All Seasons
               </option>
               <option value="first" selected={@toolbar_season_monitoring == "first"}>
-                Monitor First Season Only
+                First Season
               </option>
               <option value="future" selected={@toolbar_season_monitoring == "future"}>
-                Monitor Future Seasons
+                Future Only
               </option>
-              <option value="none" selected={@toolbar_season_monitoring == "none"}>
-                Don't Monitor Any Seasons
-              </option>
+              <option value="none" selected={@toolbar_season_monitoring == "none"}>None</option>
             </select>
           </div>
         <% end %>
+
+        <div class="divider divider-horizontal mx-0"></div>
+
+        <%!-- Monitor Toggle --%>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input
+            type="hidden"
+            name="toolbar_monitored"
+            value="false"
+          />
+          <input
+            type="checkbox"
+            name="toolbar_monitored"
+            value="true"
+            class="toggle toggle-primary toggle-sm"
+            checked={@toolbar_monitored}
+          />
+          <span class={["text-sm font-medium", !@toolbar_monitored && "text-base-content/50"]}>
+            Monitored
+          </span>
+        </label>
       </div>
-    </div>
+    </.form>
 
     <%!-- Search Bar --%>
     <.form for={%{}} phx-submit="search" id="search-form" class="mb-4 md:mb-6">

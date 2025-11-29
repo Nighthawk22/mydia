@@ -34,7 +34,7 @@ defmodule MydiaWeb.MediaLive.Show.Helpers do
         "https://image.tmdb.org/t/p/w500#{path}"
 
       _ ->
-        "/images/no-poster.jpg"
+        "/images/no-poster.svg"
     end
   end
 

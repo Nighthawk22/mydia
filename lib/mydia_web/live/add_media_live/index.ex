@@ -29,21 +29,34 @@ defmodule MydiaWeb.AddMediaLive.Index do
     {:noreply, apply_action(socket, socket.assigns.live_action, params)}
   end
 
-  defp apply_action(socket, :add_movie, _params) do
+  defp apply_action(socket, :add_movie, params) do
     socket
     |> assign(:page_title, "Add Movie")
     |> assign(:media_type, :movie)
     |> load_library_paths(:movies)
     |> load_toolbar_settings(:movie)
+    |> maybe_trigger_search(params)
   end
 
-  defp apply_action(socket, :add_series, _params) do
+  defp apply_action(socket, :add_series, params) do
     socket
     |> assign(:page_title, "Add Series")
     |> assign(:media_type, :tv_show)
     |> load_library_paths(:series)
     |> load_toolbar_settings(:tv_show)
+    |> maybe_trigger_search(params)
   end
+
+  # Auto-trigger search if a query parameter is provided
+  defp maybe_trigger_search(socket, %{"q" => query}) when is_binary(query) and query != "" do
+    send(self(), {:perform_search, query})
+
+    socket
+    |> assign(:search_query, query)
+    |> assign(:searching, true)
+  end
+
+  defp maybe_trigger_search(socket, _params), do: socket
 
   defp load_library_paths(socket, type) do
     paths =
@@ -67,20 +80,35 @@ defmodule MydiaWeb.AddMediaLive.Index do
      |> assign(:search_results, [])}
   end
 
-  def handle_event("update_toolbar", %{"field" => field, "value" => value}, socket) do
-    field_atom = String.to_atom(field)
+  def handle_event("update_toolbar", params, socket) do
+    IO.inspect(params, label: "UPDATE_TOOLBAR")
 
-    # Parse value based on field type
-    parsed_value =
-      case field_atom do
-        :toolbar_monitored ->
-          value == "true"
+    # Extract which field changed from _target
+    target = params["_target"] |> List.first()
+
+    # Get the new value for the changed field
+    value = params[target]
+
+    # Parse and assign the value
+    socket =
+      case target do
+        "toolbar_monitored" ->
+          assign(socket, :toolbar_monitored, value == "true")
+
+        "toolbar_library_path_id" ->
+          assign(socket, :toolbar_library_path_id, value)
+
+        "toolbar_quality_profile_id" ->
+          assign(socket, :toolbar_quality_profile_id, value)
+
+        "toolbar_season_monitoring" ->
+          assign(socket, :toolbar_season_monitoring, value)
 
         _ ->
-          value
+          socket
       end
 
-    {:noreply, assign(socket, field_atom, parsed_value)}
+    {:noreply, socket}
   end
 
   def handle_event("quick_add", params, socket) do
@@ -249,16 +277,32 @@ defmodule MydiaWeb.AddMediaLive.Index do
   ## Private Helpers
 
   defp load_toolbar_settings(socket, _media_type) do
-    # Set sensible defaults - these persist while the user is on the page
-    # The toolbar state is maintained in LiveView assigns
-    default_profile = get_default_quality_profile(socket.assigns.quality_profiles)
-    default_path = List.first(socket.assigns.library_paths)
+    # Only initialize toolbar settings if not already set
+    # This prevents resetting user selections when handle_params is called again
+    already_set = Map.has_key?(socket.assigns, :toolbar_library_path_id)
+    IO.inspect(already_set, label: "LOAD_TOOLBAR_SETTINGS already_set?")
 
-    socket
-    |> assign(:toolbar_library_path_id, default_path && default_path.id)
-    |> assign(:toolbar_quality_profile_id, default_profile && default_profile.id)
-    |> assign(:toolbar_monitored, true)
-    |> assign(:toolbar_season_monitoring, "all")
+    if already_set do
+      IO.inspect(socket.assigns.toolbar_quality_profile_id,
+        label: "KEEPING toolbar_quality_profile_id"
+      )
+
+      socket
+    else
+      # Set sensible defaults on first load
+      # Note: IDs are stored as strings to match HTML form values
+      default_profile = get_default_quality_profile(socket.assigns.quality_profiles)
+      default_path = List.first(socket.assigns.library_paths)
+
+      IO.inspect("INITIALIZING TOOLBAR DEFAULTS")
+
+      socket
+      |> assign(:toolbar_library_path_id, default_path && to_string(default_path.id))
+      |> assign(:toolbar_quality_profile_id, default_profile && to_string(default_profile.id))
+      |> assign(:toolbar_monitored, true)
+      |> assign(:toolbar_season_monitoring, "all")
+      |> assign(:toolbar_search_on_add, false)
+    end
   end
 
   # Gets the default quality profile from settings, or falls back to first available
@@ -448,7 +492,7 @@ defmodule MydiaWeb.AddMediaLive.Index do
 
   defp get_poster_url(result) do
     case result.poster_path do
-      nil -> "/images/no-poster.jpg"
+      nil -> "/images/no-poster.svg"
       path -> "https://image.tmdb.org/t/p/w500#{path}"
     end
   end

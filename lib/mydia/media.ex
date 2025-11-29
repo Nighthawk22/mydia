@@ -18,6 +18,7 @@ defmodule Mydia.Media do
   ## Options
     - `:type` - Filter by type ("movie" or "tv_show")
     - `:monitored` - Filter by monitored status (true/false)
+    - `:library_path_type` - Filter by library path type (:adult, :music, :books, etc.)
     - `:preload` - List of associations to preload
   """
   def list_media_items(opts \\ []) do
@@ -308,6 +309,18 @@ defmodule Mydia.Media do
   def count_tv_shows do
     MediaItem
     |> where([m], m.type == "tv_show")
+    |> Repo.aggregate(:count)
+  end
+
+  @doc """
+  Returns the count of media items by library path type.
+
+  This counts media items that have files in library paths of the specified type.
+  Includes both direct media files (for movies) and episode media files (for TV shows).
+  """
+  def count_by_library_path_type(library_type) do
+    MediaItem
+    |> filter_by_library_path_type(library_type)
     |> Repo.aggregate(:count)
   end
 
@@ -894,9 +907,43 @@ defmodule Mydia.Media do
       {:monitored, monitored}, query ->
         where(query, [m], m.monitored == ^monitored)
 
+      {:library_path_type, library_type}, query ->
+        filter_by_library_path_type(query, library_type)
+
       _other, query ->
         query
     end)
+  end
+
+  # Filter media items by library path type using a subquery
+  # This is more efficient than client-side filtering
+  defp filter_by_library_path_type(query, library_type) do
+    # Subquery to get media_item_ids from media_files in library paths of this type
+    media_item_subquery =
+      from mf in Mydia.Library.MediaFile,
+        join: lp in Mydia.Settings.LibraryPath,
+        on: mf.library_path_id == lp.id,
+        where: lp.type == ^library_type and not is_nil(mf.media_item_id),
+        select: mf.media_item_id,
+        distinct: true
+
+    # Subquery to get media_item_ids from episodes that have media files in library paths of this type
+    episode_subquery =
+      from mf in Mydia.Library.MediaFile,
+        join: lp in Mydia.Settings.LibraryPath,
+        on: mf.library_path_id == lp.id,
+        join: e in Mydia.Media.Episode,
+        on: mf.episode_id == e.id,
+        where: lp.type == ^library_type,
+        select: e.media_item_id,
+        distinct: true
+
+    # Combine both: direct media files and episode media files
+    where(
+      query,
+      [m],
+      m.id in subquery(media_item_subquery) or m.id in subquery(episode_subquery)
+    )
   end
 
   defp apply_episode_filters(query, opts) do

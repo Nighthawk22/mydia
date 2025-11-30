@@ -7,13 +7,15 @@ defmodule Mydia.Jobs.DownloadMonitor do
   - Marking downloads as completed in the database
   - Triggering media import jobs for completed downloads
   - Recording errors for failed downloads
-  - Cleaning up downloads that were removed from clients
+  - Flagging downloads that were removed from clients
 
   ## Missing Download Detection
 
   When a download is manually removed from a download client (e.g., Transmission),
-  the job will detect this and automatically remove the download record from the
-  database. This ensures media items don't remain stuck with "downloading" status.
+  the job will detect this and mark the download as "missing" with an error message.
+  This preserves the download in the Issues tab so users can investigate why the
+  download was removed before import completed. Users can manually delete from
+  the Issues tab if desired.
   """
 
   use Oban.Worker,
@@ -154,28 +156,37 @@ defmodule Mydia.Jobs.DownloadMonitor do
   end
 
   defp handle_missing(download_map) do
-    Logger.info("Handling missing download (removed from client)",
+    Logger.warning("Download missing from client - preserving for user investigation",
       download_id: download_map.id,
       title: download_map.title,
       client: download_map.download_client
     )
 
-    # Get the download struct from database
-    download = Downloads.get_download!(download_map.id)
+    # Get the download struct from database (with media_item preloaded)
+    download = Downloads.get_download!(download_map.id, preload: [:media_item])
 
-    # Delete the download record since it no longer exists in any client
-    # This prevents the media item from showing as "downloading"
-    case Downloads.delete_download(download) do
-      {:ok, _deleted} ->
-        Logger.info("Download removed from database (no longer in client)",
-          download_id: download_map.id
+    # Instead of deleting, mark as missing with error message
+    # This preserves the record in the Issues tab for user investigation
+    error_msg =
+      "Removed from download client '#{download_map.download_client}' before import completed. " <>
+        "The download may have been manually deleted, or the client may have encountered an error."
+
+    case Downloads.update_download(download, %{
+           status: "missing",
+           error_message: error_msg
+         }) do
+      {:ok, updated} ->
+        Logger.info("Download marked as missing (preserved for Issues tab)",
+          download_id: download_map.id,
+          status: updated.status
         )
 
-        # TODO: Emit download.removed event when events system exists (task-107)
+        # Track event for user visibility
+        Events.download_failed(download, error_msg, media_item: download.media_item)
         :ok
 
       {:error, changeset} ->
-        Logger.error("Failed to delete missing download",
+        Logger.error("Failed to mark download as missing",
           download_id: download.id,
           errors: inspect(changeset.errors)
         )

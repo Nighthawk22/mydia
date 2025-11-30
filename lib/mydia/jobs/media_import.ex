@@ -32,6 +32,11 @@ defmodule Mydia.Jobs.MediaImport do
   # 1 min, 5 min, 15 min, 1 hour, 4 hours, 12 hours, 24 hours, then 24 hours indefinitely
   @backoff_schedule [60, 300, 900, 3600, 14_400, 43_200, 86_400]
 
+  # Snooze settings for waiting on incomplete downloads
+  # 5 minutes between snoozes, max 12 snoozes (1 hour total)
+  @snooze_interval_seconds 300
+  @max_snooze_count 12
+
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"download_id" => download_id} = args, attempt: attempt}) do
     Logger.info("Starting media import",
@@ -43,12 +48,32 @@ defmodule Mydia.Jobs.MediaImport do
       Downloads.get_download!(download_id, preload: [:media_item, :episode, :library_path])
 
     if is_nil(download.completed_at) do
-      Logger.warning("Download not completed, skipping import",
-        download_id: download_id,
-        completed_at: download.completed_at
-      )
+      # Download not yet completed - use snooze mechanism instead of returning ok
+      snooze_count = Map.get(args, "snooze_count", 0)
 
-      {:ok, :skipped}
+      if snooze_count >= @max_snooze_count do
+        # Hit max snooze count - mark as failed so it appears in Issues tab
+        Logger.warning(
+          "Download not completed after #{snooze_count} snoozes (~1 hour), marking as failed",
+          download_id: download_id,
+          snooze_count: snooze_count
+        )
+
+        handle_import_failure(download, :download_not_completed, attempt)
+        {:error, :download_not_completed}
+      else
+        Logger.info("Download not completed, scheduling retry import job",
+          download_id: download_id,
+          snooze_count: snooze_count + 1,
+          max_snooze_count: @max_snooze_count,
+          next_check_in_seconds: @snooze_interval_seconds
+        )
+
+        # Schedule a new job with incremented snooze count
+        # We can't use {:snooze, seconds} because it doesn't update args
+        schedule_snooze_retry(download_id, snooze_count + 1, args)
+        {:ok, :waiting_for_completion}
+      end
     else
       case import_download(download, args) do
         {:ok, result} ->
@@ -1111,6 +1136,49 @@ defmodule Mydia.Jobs.MediaImport do
 
           :ok
       end
+    end
+  end
+
+  # Schedule a retry job when download is not yet completed
+  # Uses a new job with updated snooze_count to track how long we've been waiting
+  defp schedule_snooze_retry(download_id, new_snooze_count, original_args) do
+    scheduled_at = DateTime.add(DateTime.utc_now(), @snooze_interval_seconds, :second)
+
+    # Preserve original args but update snooze_count
+    new_args =
+      original_args
+      |> Map.put("snooze_count", new_snooze_count)
+
+    changeset = __MODULE__.new(new_args, scheduled_at: scheduled_at)
+
+    # Use Oban.insert if available, otherwise fall back to Repo.insert for testing
+    result =
+      try do
+        Oban.insert(changeset)
+      rescue
+        RuntimeError ->
+          # In testing mode without running Oban, insert directly via Repo
+          Mydia.Repo.insert(changeset)
+      end
+
+    case result do
+      {:ok, job} ->
+        Logger.debug("Scheduled snooze retry job",
+          download_id: download_id,
+          job_id: job.id,
+          snooze_count: new_snooze_count,
+          scheduled_at: scheduled_at
+        )
+
+        :ok
+
+      {:error, reason} ->
+        Logger.error("Failed to schedule snooze retry job",
+          download_id: download_id,
+          reason: inspect(reason)
+        )
+
+        :error
     end
   end
 end

@@ -10,7 +10,7 @@ defmodule Mydia.Jobs.MediaImportTest do
   @moduletag :tmp_dir
 
   describe "perform/1" do
-    test "skips import if download is not completed" do
+    test "schedules retry when download is not completed (first snooze)" do
       media_item = media_item_fixture()
 
       download =
@@ -20,7 +20,84 @@ defmodule Mydia.Jobs.MediaImportTest do
           progress: 50
         })
 
-      assert {:ok, :skipped} = perform_job(MediaImport, %{"download_id" => download.id})
+      # First attempt with snooze_count = 0 should schedule a retry
+      assert {:ok, :waiting_for_completion} =
+               perform_job(MediaImport, %{"download_id" => download.id})
+
+      # Verify a new job was scheduled with incremented snooze_count
+      assert_enqueued(
+        worker: MediaImport,
+        args: %{"download_id" => download.id, "snooze_count" => 1}
+      )
+    end
+
+    test "schedules retry with incremented snooze count when download not completed" do
+      media_item = media_item_fixture()
+
+      download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          status: "downloading",
+          progress: 50
+        })
+
+      # With snooze_count = 5 should schedule a retry with snooze_count = 6
+      assert {:ok, :waiting_for_completion} =
+               perform_job(MediaImport, %{"download_id" => download.id, "snooze_count" => 5})
+
+      assert_enqueued(
+        worker: MediaImport,
+        args: %{"download_id" => download.id, "snooze_count" => 6}
+      )
+    end
+
+    test "marks as failed after max snooze count reached" do
+      media_item = media_item_fixture()
+
+      download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          status: "downloading",
+          progress: 50
+        })
+
+      # With snooze_count = 12 (max), should fail and mark download
+      assert {:error, :download_not_completed} =
+               perform_job(MediaImport, %{"download_id" => download.id, "snooze_count" => 12})
+
+      # Verify download now has import_failed_at set (visible in Issues tab)
+      updated_download = Mydia.Downloads.get_download!(download.id)
+      assert updated_download.import_failed_at != nil
+      assert updated_download.import_last_error =~ "not completed"
+    end
+
+    test "proceeds with import when download completes during snooze period" do
+      media_item = media_item_fixture(%{type: "movie", title: "Test Movie", year: 2024})
+
+      # Start with incomplete download
+      download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          status: "downloading",
+          progress: 50
+        })
+
+      # First check - not completed
+      assert {:ok, :waiting_for_completion} =
+               perform_job(MediaImport, %{"download_id" => download.id})
+
+      # Simulate download completing
+      {:ok, _} =
+        Mydia.Downloads.update_download(download, %{
+          status: "completed",
+          progress: 100,
+          completed_at: DateTime.utc_now()
+        })
+
+      # Second check with snooze_count = 1 - now should try to import
+      # (will fail with :no_client since we don't have a mock, but proves it tries)
+      assert {:error, :no_client} =
+               perform_job(MediaImport, %{"download_id" => download.id, "snooze_count" => 1})
     end
 
     test "returns error if download does not exist" do

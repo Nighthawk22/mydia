@@ -721,6 +721,115 @@ defmodule Mydia.DownloadsTest do
     end
   end
 
+  describe "list_stuck_downloads/1" do
+    test "returns downloads that are stuck (completed but not imported)" do
+      # Create a stuck download - completed more than 1 hour ago but never imported
+      two_hours_ago = DateTime.add(DateTime.utc_now(), -2, :hour)
+
+      stuck_download =
+        download_fixture(%{
+          title: "Stuck Download",
+          completed_at: two_hours_ago,
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      # Create a normal completed download (will still be stuck due to time)
+      one_hour_ago = DateTime.add(DateTime.utc_now(), -61, :minute)
+
+      also_stuck =
+        download_fixture(%{
+          title: "Also Stuck",
+          completed_at: one_hour_ago,
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      # Create a recently completed download (not stuck yet)
+      just_now = DateTime.utc_now()
+
+      _not_stuck_yet =
+        download_fixture(%{
+          title: "Not Stuck Yet",
+          completed_at: just_now,
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      # Create a successfully imported download (not stuck)
+      _imported =
+        download_fixture(%{
+          title: "Already Imported",
+          completed_at: two_hours_ago,
+          imported_at: DateTime.utc_now(),
+          import_failed_at: nil
+        })
+
+      # Create a failed download (not stuck - already has import_failed_at)
+      _failed =
+        download_fixture(%{
+          title: "Already Failed",
+          completed_at: two_hours_ago,
+          imported_at: nil,
+          import_failed_at: DateTime.utc_now()
+        })
+
+      stuck_downloads = Downloads.list_stuck_downloads()
+
+      assert length(stuck_downloads) == 2
+      stuck_ids = Enum.map(stuck_downloads, & &1.id)
+      assert stuck_download.id in stuck_ids
+      assert also_stuck.id in stuck_ids
+    end
+
+    test "respects custom threshold_minutes option" do
+      # Create a download completed 30 minutes ago
+      thirty_minutes_ago = DateTime.add(DateTime.utc_now(), -30, :minute)
+
+      download =
+        download_fixture(%{
+          title: "Recently Completed",
+          completed_at: thirty_minutes_ago,
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      # With default 60 minute threshold, should not be stuck
+      assert Downloads.list_stuck_downloads() == []
+
+      # With 25 minute threshold, should be stuck
+      stuck_downloads = Downloads.list_stuck_downloads(threshold_minutes: 25)
+      assert length(stuck_downloads) == 1
+      assert hd(stuck_downloads).id == download.id
+    end
+
+    test "returns empty list when no stuck downloads exist" do
+      # Create a download that's not stuck (recently completed)
+      _download =
+        download_fixture(%{
+          title: "Recent Download",
+          completed_at: DateTime.utc_now(),
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      assert Downloads.list_stuck_downloads() == []
+    end
+
+    test "does not include downloads that were never completed" do
+      # Create a download without completed_at (still downloading)
+      _downloading =
+        download_fixture(%{
+          title: "Still Downloading",
+          completed_at: nil,
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      assert Downloads.list_stuck_downloads() == []
+    end
+  end
+
   # Helper function to create a download fixture
   defp download_fixture(attrs \\ %{}) do
     # Generate unique download_client_id to avoid violating unique constraint

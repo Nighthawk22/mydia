@@ -68,7 +68,7 @@ defmodule Mydia.Jobs.MediaImportTest do
       # Verify download now has import_failed_at set (visible in Issues tab)
       updated_download = Mydia.Downloads.get_download!(download.id)
       assert updated_download.import_failed_at != nil
-      assert updated_download.import_last_error =~ "not completed"
+      assert updated_download.import_last_error =~ "not yet complete"
     end
 
     test "proceeds with import when download completes during snooze period" do

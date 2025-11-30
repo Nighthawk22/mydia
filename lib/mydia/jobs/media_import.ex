@@ -1064,18 +1064,8 @@ defmodule Mydia.Jobs.MediaImport do
     backoff_seconds = calculate_backoff(attempt)
     next_retry_at = DateTime.add(DateTime.utc_now(), backoff_seconds, :second)
 
-    # Format error message for storage
-    error_message =
-      case reason do
-        atom when is_atom(atom) ->
-          atom |> Atom.to_string() |> String.replace("_", " ") |> String.capitalize()
-
-        binary when is_binary(binary) ->
-          binary
-
-        other ->
-          inspect(other)
-      end
+    # Format error message with actionable context
+    error_message = format_import_error(reason, download)
 
     # Track first failure timestamp
     import_failed_at = download.import_failed_at || DateTime.utc_now()
@@ -1106,6 +1096,104 @@ defmodule Mydia.Jobs.MediaImport do
         )
 
         :ok
+    end
+  end
+
+  # Format error messages with actionable context for users
+  defp format_import_error(:no_client, download) do
+    client_name = download.download_client || "Unknown"
+
+    "Download client '#{client_name}' not found in settings. " <>
+      "Check Settings → Download Clients and verify the client is configured."
+  end
+
+  defp format_import_error(:client_error, download) do
+    client_name = download.download_client || "Unknown"
+
+    "Cannot connect to download client '#{client_name}'. " <>
+      "Check that the client is running and accessible from the server."
+  end
+
+  defp format_import_error(:no_files, _download) do
+    "No files found in download location. " <>
+      "The download may have been moved, deleted, or is still extracting. " <>
+      "Import will retry automatically."
+  end
+
+  defp format_import_error(:no_library_path, download) do
+    media_type = get_media_type_name(download)
+
+    "No library configured for #{media_type}. " <>
+      "Add a compatible library in Settings → Libraries."
+  end
+
+  defp format_import_error(:no_importable_files, download) do
+    media_type = get_media_type_name(download)
+
+    "No importable files found for #{media_type}. " <>
+      "The download may contain only non-media files (samples, NFO, etc.)."
+  end
+
+  defp format_import_error(:partial_import, _download) do
+    "Some files could not be imported. " <>
+      "Check library path permissions and available disk space."
+  end
+
+  defp format_import_error(:download_not_completed, download) do
+    client_name = download.download_client || "Unknown"
+
+    "Download not yet complete in '#{client_name}' after waiting ~1 hour. " <>
+      "Check the download client for errors or stalled downloads."
+  end
+
+  defp format_import_error(:library_type_mismatch, download) do
+    media_type = get_media_type_name(download)
+
+    "Cannot import #{media_type} to the configured library. " <>
+      "The library type doesn't match the media type (e.g., trying to add movies to a TV library)."
+  end
+
+  defp format_import_error(:database_error, _download) do
+    "Database error while creating file records. " <>
+      "This may be a temporary issue. Import will retry automatically."
+  end
+
+  defp format_import_error(reason, _download) when is_atom(reason) do
+    # Fallback for unknown atom errors
+    reason |> Atom.to_string() |> String.replace("_", " ") |> String.capitalize()
+  end
+
+  defp format_import_error(reason, _download) when is_binary(reason) do
+    reason
+  end
+
+  defp format_import_error(reason, _download) do
+    inspect(reason)
+  end
+
+  # Helper to get a human-readable media type name
+  defp get_media_type_name(download) do
+    cond do
+      download.episode && download.media_item ->
+        "TV show episode"
+
+      download.media_item && download.media_item.type == "movie" ->
+        "movie"
+
+      download.media_item && download.media_item.type == "tv_show" ->
+        "TV show"
+
+      download.library_path && download.library_path.type == :music ->
+        "music"
+
+      download.library_path && download.library_path.type == :books ->
+        "book"
+
+      download.library_path && download.library_path.type == :adult ->
+        "adult content"
+
+      true ->
+        "media"
     end
   end
 

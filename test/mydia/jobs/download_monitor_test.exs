@@ -352,6 +352,149 @@ defmodule Mydia.Jobs.DownloadMonitorTest do
     end
   end
 
+  describe "stuck download detection" do
+    test "detects and flags downloads that completed but never imported" do
+      setup_runtime_config([])
+      media_item = media_item_fixture()
+
+      # Create a stuck download - completed more than 1 hour ago but never imported
+      two_hours_ago = DateTime.add(DateTime.utc_now(), -2, :hour)
+
+      stuck_download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          title: "Stuck Download",
+          download_client: "test-client",
+          download_client_id: "stuck-123",
+          completed_at: two_hours_ago,
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      # Verify download exists and has no failure before job runs
+      assert Downloads.get_download!(stuck_download.id)
+      assert is_nil(stuck_download.import_failed_at)
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Stuck download should now have import_failed_at set
+      updated = Downloads.get_download!(stuck_download.id)
+      assert updated.import_failed_at != nil
+      assert updated.import_last_error =~ "Import stalled"
+    end
+
+    test "enqueues import retry job for stuck downloads" do
+      setup_runtime_config([])
+      media_item = media_item_fixture()
+
+      # Create a stuck download
+      two_hours_ago = DateTime.add(DateTime.utc_now(), -2, :hour)
+
+      stuck_download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          title: "Stuck Download",
+          download_client: "test-client",
+          download_client_id: "stuck-456",
+          completed_at: two_hours_ago,
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Should have enqueued a MediaImport job for the stuck download
+      assert_enqueued(
+        worker: Mydia.Jobs.MediaImport,
+        args: %{"download_id" => stuck_download.id}
+      )
+    end
+
+    test "does not flag recently completed downloads as stuck" do
+      setup_runtime_config([])
+      media_item = media_item_fixture()
+
+      # Create a recently completed download (30 minutes ago - not stuck yet)
+      thirty_minutes_ago = DateTime.add(DateTime.utc_now(), -30, :minute)
+
+      recent_download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          title: "Recent Download",
+          download_client: "test-client",
+          download_client_id: "recent-123",
+          completed_at: thirty_minutes_ago,
+          imported_at: nil,
+          import_failed_at: nil
+        })
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Recent download should NOT have import_failed_at set
+      # (but it will be marked as missing since it's not in any client)
+      updated = Downloads.get_download!(recent_download.id)
+      # import_failed_at should still be nil (not flagged as stuck)
+      assert is_nil(updated.import_failed_at)
+    end
+
+    test "does not flag already imported downloads" do
+      setup_runtime_config([])
+      media_item = media_item_fixture()
+
+      # Create an already imported download
+      two_hours_ago = DateTime.add(DateTime.utc_now(), -2, :hour)
+
+      imported_download =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          title: "Imported Download",
+          download_client: "test-client",
+          download_client_id: "imported-123",
+          completed_at: two_hours_ago,
+          imported_at: DateTime.utc_now(),
+          import_failed_at: nil
+        })
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Should not be modified (already imported)
+      updated = Downloads.get_download!(imported_download.id)
+      assert is_nil(updated.import_failed_at)
+      assert updated.imported_at != nil
+    end
+
+    test "does not flag downloads that already have import_failed_at" do
+      setup_runtime_config([])
+      media_item = media_item_fixture()
+
+      # Create a download that already has a failure tracked
+      two_hours_ago = DateTime.add(DateTime.utc_now(), -2, :hour)
+
+      already_failed =
+        download_fixture(%{
+          media_item_id: media_item.id,
+          title: "Already Failed Download",
+          download_client: "test-client",
+          download_client_id: "failed-123",
+          completed_at: two_hours_ago,
+          imported_at: nil,
+          import_failed_at: two_hours_ago,
+          import_last_error: "Previous failure"
+        })
+
+      # Run the job
+      assert :ok = perform_job(DownloadMonitor, %{})
+
+      # Should not be modified (already has failure)
+      updated = Downloads.get_download!(already_failed.id)
+      assert updated.import_last_error == "Previous failure"
+    end
+  end
+
   ## Helper Functions
 
   defp setup_runtime_config(download_clients) do

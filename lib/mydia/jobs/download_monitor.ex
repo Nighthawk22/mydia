@@ -70,6 +70,11 @@ defmodule Mydia.Jobs.DownloadMonitor do
     untracked_downloads = UntrackedMatcher.find_and_match_untracked()
     Logger.info("Matched #{length(untracked_downloads)} untracked torrent(s) to library items")
 
+    # Detect stuck downloads (completed but never imported for >1 hour)
+    stuck = Downloads.list_stuck_downloads(preload: [:media_item])
+    Logger.info("Found #{length(stuck)} stuck downloads")
+    Enum.each(stuck, &handle_stuck/1)
+
     duration = System.monotonic_time(:millisecond) - start_time
 
     Logger.info("Download monitoring completed",
@@ -77,6 +82,7 @@ defmodule Mydia.Jobs.DownloadMonitor do
       completed_count: length(completed),
       failed_count: length(failed),
       missing_count: length(missing),
+      stuck_count: length(stuck),
       untracked_matched: length(untracked_downloads)
     )
 
@@ -195,6 +201,48 @@ defmodule Mydia.Jobs.DownloadMonitor do
     end
   end
 
+  defp handle_stuck(download) do
+    # Calculate how long the download has been stuck
+    hours_stuck =
+      DateTime.diff(DateTime.utc_now(), download.completed_at, :hour)
+
+    Logger.warning("Download stuck - completed but never imported",
+      download_id: download.id,
+      title: download.title,
+      completed_at: download.completed_at,
+      hours_stuck: hours_stuck
+    )
+
+    error_msg =
+      "Import stalled - download completed #{hours_stuck} hour(s) ago but import never ran. " <>
+        "This may indicate the import job failed silently or was never scheduled. " <>
+        "A new import will be attempted automatically."
+
+    # Flag as failed so it appears in Issues tab
+    case Downloads.update_download(download, %{
+           import_failed_at: DateTime.utc_now(),
+           import_last_error: error_msg
+         }) do
+      {:ok, updated} ->
+        Logger.info("Stuck download flagged for investigation",
+          download_id: download.id
+        )
+
+        # Track event for user visibility
+        Events.download_failed(download, error_msg, media_item: download.media_item)
+
+        # Enqueue a new import job to retry
+        enqueue_import_job(updated)
+
+      {:error, changeset} ->
+        Logger.error("Failed to flag stuck download",
+          download_id: download.id,
+          errors: inspect(changeset.errors)
+        )
+    end
+  end
+
+  # Enqueue import job with save_path from client status (normal completion flow)
   defp enqueue_import_job(download, download_map) do
     %{
       "download_id" => download.id,
@@ -205,5 +253,45 @@ defmodule Mydia.Jobs.DownloadMonitor do
     }
     |> Mydia.Jobs.MediaImport.new()
     |> Oban.insert()
+  end
+
+  # Enqueue import job for stuck downloads (save_path will be fetched by MediaImport)
+  defp enqueue_import_job(download) do
+    changeset =
+      %{
+        "download_id" => download.id,
+        "cleanup_client" => true,
+        "use_hardlinks" => true,
+        "move_files" => false
+      }
+      |> Mydia.Jobs.MediaImport.new()
+
+    # Use Oban.insert if available, otherwise fall back to Repo.insert for testing
+    result =
+      try do
+        Oban.insert(changeset)
+      rescue
+        RuntimeError ->
+          # In testing mode without running Oban, insert directly via Repo
+          Mydia.Repo.insert(changeset)
+      end
+
+    case result do
+      {:ok, job} ->
+        Logger.info("Retry import job enqueued for stuck download",
+          download_id: download.id,
+          job_id: job.id
+        )
+
+        {:ok, job}
+
+      {:error, reason} = error ->
+        Logger.error("Failed to enqueue retry import job",
+          download_id: download.id,
+          reason: inspect(reason)
+        )
+
+        error
+    end
   end
 end

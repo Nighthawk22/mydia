@@ -415,6 +415,42 @@ defmodule Mydia.Downloads do
   end
 
   @doc """
+  Lists "stuck" downloads that completed but never got imported.
+
+  A download is considered stuck when:
+  - `completed_at` is set (download finished)
+  - `imported_at` is nil (not imported)
+  - `import_failed_at` is nil (no tracked failure)
+  - Completed more than the threshold ago (default: 1 hour)
+
+  This catches edge cases where the import job never ran or silently failed.
+
+  ## Options
+    - `:threshold_minutes` - How long after completion to consider stuck (default: 60)
+    - `:preload` - List of associations to preload
+
+  ## Examples
+
+      iex> list_stuck_downloads()
+      [%Download{completed_at: ~U[...], imported_at: nil, import_failed_at: nil}]
+
+      iex> list_stuck_downloads(threshold_minutes: 30)
+      [%Download{...}]
+  """
+  def list_stuck_downloads(opts \\ []) do
+    threshold_minutes = Keyword.get(opts, :threshold_minutes, 60)
+    threshold_time = DateTime.add(DateTime.utc_now(), -threshold_minutes, :minute)
+
+    Download
+    |> where([d], not is_nil(d.completed_at))
+    |> where([d], is_nil(d.imported_at))
+    |> where([d], is_nil(d.import_failed_at))
+    |> where([d], d.completed_at < ^threshold_time)
+    |> maybe_preload(opts[:preload])
+    |> Repo.all()
+  end
+
+  @doc """
   Initiates a download from a search result.
 
   Selects download client, adds torrent, creates Download record.

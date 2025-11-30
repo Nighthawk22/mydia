@@ -59,6 +59,8 @@ defmodule Mydia.Application do
         validate_library_paths()
         # Sync library paths and populate relative paths for media files
         Mydia.Library.StartupSync.sync_all()
+        # Check for database integrity issues and queue repairs if needed
+        Mydia.Library.DatabaseHealthCheck.run()
         # Clean up stale HLS session directories
         cleanup_stale_hls_sessions()
       end

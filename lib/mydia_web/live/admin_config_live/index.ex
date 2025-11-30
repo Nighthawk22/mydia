@@ -1917,6 +1917,25 @@ defmodule MydiaWeb.AdminConfigLive.Index do
           source: get_source("CRASH_REPORTING_ENABLED", "crash_reporting.enabled")
         }
       ],
+      "Library" => [
+        %{
+          key: "library.auto_repair_enabled",
+          label: "Auto-Repair Database Issues",
+          description:
+            "Automatically queue a library re-scan on startup when database issues (orphaned files) are detected",
+          type: :boolean,
+          value: get_library_auto_repair_enabled(),
+          source: get_source("DATABASE_AUTO_REPAIR", "library.auto_repair_enabled")
+        },
+        %{
+          key: "library.auto_repair_threshold",
+          label: "Auto-Repair Threshold",
+          description: "Minimum number of issues required to trigger auto-repair",
+          type: :integer,
+          value: get_library_auto_repair_threshold(),
+          source: get_source("DATABASE_AUTO_REPAIR_THRESHOLD", "library.auto_repair_threshold")
+        }
+      ],
       "FlareSolverr" => [
         %{
           key: "flaresolverr.enabled",
@@ -1962,6 +1981,46 @@ defmodule MydiaWeb.AdminConfigLive.Index do
 
       setting ->
         parse_boolean_value(setting.value)
+    end
+  end
+
+  defp get_library_auto_repair_enabled do
+    # Priority: ENV > Database > Application config > Default
+    case Elixir.System.get_env("DATABASE_AUTO_REPAIR") do
+      nil ->
+        case Settings.get_config_setting_by_key("library.auto_repair_enabled") do
+          nil ->
+            Application.get_env(:mydia, :database_auto_repair, true)
+
+          setting ->
+            parse_boolean_value(setting.value)
+        end
+
+      value ->
+        parse_boolean_value(value)
+    end
+  end
+
+  defp get_library_auto_repair_threshold do
+    # Priority: ENV > Database > Application config > Default
+    case Elixir.System.get_env("DATABASE_AUTO_REPAIR_THRESHOLD") do
+      nil ->
+        case Settings.get_config_setting_by_key("library.auto_repair_threshold") do
+          nil ->
+            Application.get_env(:mydia, :database_auto_repair_threshold, 10)
+
+          setting ->
+            case Integer.parse(setting.value) do
+              {int, ""} -> int
+              _ -> 10
+            end
+        end
+
+      value ->
+        case Integer.parse(value) do
+          {int, ""} -> int
+          _ -> 10
+        end
     end
   end
 
@@ -2045,6 +2104,7 @@ defmodule MydiaWeb.AdminConfigLive.Index do
       "Crash Reporting" -> :crash_reporting
       "Notifications" -> :notifications
       "FlareSolverr" -> :flaresolverr
+      "Library" -> :library
       _ -> :general
     end
   end

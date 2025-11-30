@@ -78,6 +78,7 @@ config :mydia, Oban,
 # Enable SQL sandbox for Wallaby browser tests
 config :mydia,
   start_health_monitors: false,
+  database_auto_repair: false,
   sql_sandbox: true
 
 # Wallaby configuration for browser-based feature tests

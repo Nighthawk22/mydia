@@ -25,6 +25,7 @@ defmodule Mydia.Settings.DownloadClientConfig do
     field :category, :string
     field :download_directory, :string
     field :connection_settings, Mydia.Settings.JsonMapType
+    field :remove_completed, :boolean, default: false
 
     belongs_to :updated_by, Mydia.Accounts.User
 
@@ -51,6 +52,7 @@ defmodule Mydia.Settings.DownloadClientConfig do
       :category,
       :download_directory,
       :connection_settings,
+      :remove_completed,
       :updated_by_id
     ])
     |> validate_required([:name, :type])

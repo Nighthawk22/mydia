@@ -462,6 +462,7 @@ defmodule MydiaWeb.AdminConfigLive.Components do
   defp category_icon("Crash Reporting"), do: "hero-bug-ant"
   defp category_icon("Notifications"), do: "hero-bell"
   defp category_icon("FlareSolverr"), do: "hero-shield-check"
+  defp category_icon("Library"), do: "hero-folder-open"
   defp category_icon(_), do: "hero-cog-6-tooth"
 
   @doc """
@@ -2310,6 +2311,15 @@ defmodule MydiaWeb.AdminConfigLive.Components do
               label="Enabled"
               checked
             />
+            <.input
+              field={@download_client_form[:remove_completed]}
+              type="checkbox"
+              label="Remove from client after import"
+            />
+            <p class="text-xs text-base-content/60 -mt-2">
+              When disabled (default), completed downloads remain in the client for seeding.
+              When enabled, downloads are removed from the client after successful import.
+            </p>
             <.input field={@download_client_form[:priority]} type="number" label="Priority" />
           </div>
 

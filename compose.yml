@@ -52,6 +52,8 @@ services:
       - mix_cache:/app/.mix
       - hex_cache:/app/.hex
       - node_modules:/app/assets/node_modules
+      # Persist NIF cache to avoid redownloading/recompiling on every run
+      - elixir_make_cache:/root/.cache/elixir_make
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -73,6 +75,8 @@ volumes:
   hex_cache:
     driver: local
   node_modules:
+    driver: local
+  elixir_make_cache:
     driver: local
   # PostgreSQL data (only used with --profile postgres)
   postgres_data:

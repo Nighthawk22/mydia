@@ -438,108 +438,129 @@ defmodule MydiaWeb.ImportMediaLive.Components do
     <% match = @episode.match_result %>
     <li class={"flex items-center gap-3 py-2 px-3 hover:bg-base-200/50 rounded-lg " <> if(@is_selected, do: "bg-primary/10", else: "")}>
       <%= if @is_editing do %>
-        <%!-- Edit Form --%>
-        <.form
-          for={%{}}
-          phx-submit="save_edit"
-          id={"edit-form-#{@episode.index}"}
-          class="flex-1"
-        >
-          <%!-- Series/Movie Title with Search --%>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-xs">
-                Series/Movie Title
-              </span>
-            </label>
-            <div class="relative">
-              <input
-                type="text"
-                name="edit_form[title]"
-                value={@edit_form["title"]}
-                class="input input-bordered input-sm w-full"
-                phx-change="search_series"
-                phx-debounce="300"
-                autocomplete="off"
-              />
-              <%= if @search_results != [] do %>
-                <.search_results_dropdown results={@search_results} />
-              <% end %>
+        <%!-- Edit Form Card --%>
+        <div class="card card-compact bg-base-100 border border-primary/30 shadow-lg w-full">
+          <div class="card-body gap-4">
+            <%!-- Header --%>
+            <div class="flex items-start gap-3 pb-2 border-b border-base-300">
+              <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center shrink-0">
+                <.icon name="hero-tv" class="w-5 h-5 text-info" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <h4 class="font-semibold text-sm">Edit Episode Match</h4>
+                <p class="text-xs text-base-content/60 truncate">
+                  {Path.basename(@episode.file.path)}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle"
+                phx-click="cancel_edit"
+              >
+                <.icon name="hero-x-mark" class="w-4 h-4" />
+              </button>
             </div>
-          </div>
-          <input
-            type="hidden"
-            name="edit_form[provider_id]"
-            value={@edit_form["provider_id"]}
-          />
-          <input
-            type="hidden"
-            name="edit_form[type]"
-            value={@edit_form["type"]}
-          />
-          <%!-- Season Number --%>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-xs">Season Number</span>
-            </label>
-            <input
-              type="number"
-              name="edit_form[season]"
-              value={@edit_form["season"]}
-              class="input input-bordered input-sm"
-              placeholder="e.g., 1"
-              min="0"
-            />
-          </div>
-          <%!-- Episode Numbers --%>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-xs">
-                Episode Number(s)
-              </span>
-            </label>
-            <input
-              type="text"
-              name="edit_form[episodes]"
-              value={@edit_form["episodes"]}
-              class="input input-bordered input-sm"
-              placeholder="e.g., 1, 2, 3"
-            />
-            <label class="label">
-              <span class="label-text-alt text-xs">
-                Comma-separated for multi-episode files
-              </span>
-            </label>
-          </div>
-          <%!-- Year --%>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-xs">Year</span>
-            </label>
-            <input
-              type="number"
-              name="edit_form[year]"
-              value={@edit_form["year"]}
-              class="input input-bordered input-sm"
-              placeholder="e.g., 2024"
-              min="1900"
-              max="2100"
-            />
-          </div>
-          <%!-- Action Buttons --%>
-          <div class="flex gap-2 justify-end">
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm"
-              phx-click="cancel_edit"
+
+            <.form
+              for={%{}}
+              phx-submit="save_edit"
+              id={"edit-form-#{@episode.index}"}
+              class="space-y-4"
             >
-              Cancel
-            </button>
-            <button type="submit" class="btn btn-primary btn-sm">
-              <.icon name="hero-check" class="w-4 h-4" /> Save
-            </button>
+              <%!-- Series Title with Search --%>
+              <div class="form-control">
+                <label class="label py-1">
+                  <span class="label-text text-xs font-medium">Series Title</span>
+                  <%= if @edit_form["provider_id"] do %>
+                    <span class="label-text-alt text-xs text-success">
+                      <.icon name="hero-check-circle" class="w-3 h-3 inline" /> Matched
+                    </span>
+                  <% end %>
+                </label>
+                <div class="relative">
+                  <div class="join w-full">
+                    <span class="join-item flex items-center px-3 bg-base-200 border border-base-300 border-r-0">
+                      <.icon name="hero-magnifying-glass" class="w-4 h-4 text-base-content/50" />
+                    </span>
+                    <input
+                      type="text"
+                      name="edit_form[title]"
+                      value={@edit_form["title"]}
+                      class="input input-bordered input-sm join-item flex-1"
+                      phx-change="search_series"
+                      phx-debounce="300"
+                      autocomplete="off"
+                      placeholder="Search for series..."
+                    />
+                  </div>
+                  <%= if @search_results != [] do %>
+                    <.search_results_dropdown results={@search_results} />
+                  <% end %>
+                </div>
+              </div>
+
+              <input type="hidden" name="edit_form[provider_id]" value={@edit_form["provider_id"]} />
+              <input type="hidden" name="edit_form[type]" value={@edit_form["type"]} />
+
+              <%!-- Season/Episode/Year Grid --%>
+              <div class="grid grid-cols-3 gap-3">
+                <div class="form-control">
+                  <label class="label py-1">
+                    <span class="label-text text-xs font-medium">Season</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="edit_form[season]"
+                    value={@edit_form["season"]}
+                    class="input input-bordered input-sm w-full"
+                    placeholder="1"
+                    min="0"
+                  />
+                </div>
+                <div class="form-control">
+                  <label class="label py-1">
+                    <span class="label-text text-xs font-medium">Episode(s)</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="edit_form[episodes]"
+                    value={@edit_form["episodes"]}
+                    class="input input-bordered input-sm w-full"
+                    placeholder="1, 2"
+                  />
+                </div>
+                <div class="form-control">
+                  <label class="label py-1">
+                    <span class="label-text text-xs font-medium">Year</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="edit_form[year]"
+                    value={@edit_form["year"]}
+                    class="input input-bordered input-sm w-full"
+                    placeholder="2024"
+                    min="1900"
+                    max="2100"
+                  />
+                </div>
+              </div>
+              <p class="text-xs text-base-content/50 -mt-2">
+                <.icon name="hero-information-circle" class="w-3 h-3 inline" />
+                Use comma-separated values for multi-episode files
+              </p>
+
+              <%!-- Action Buttons --%>
+              <div class="card-actions justify-end pt-2 border-t border-base-300">
+                <button type="button" class="btn btn-ghost btn-sm" phx-click="cancel_edit">
+                  Cancel
+                </button>
+                <button type="submit" class="btn btn-primary btn-sm gap-1">
+                  <.icon name="hero-check" class="w-4 h-4" /> Save Changes
+                </button>
+              </div>
+            </.form>
           </div>
-        </.form>
+        </div>
       <% else %>
         <%!-- Normal Display --%>
         <input
@@ -643,59 +664,100 @@ defmodule MydiaWeb.ImportMediaLive.Components do
     <% match = @movie.match_result %>
     <li class={"flex items-center gap-3 py-2 px-3 hover:bg-base-200/50 rounded-lg " <> if(@is_selected, do: "bg-primary/10", else: "")}>
       <%= if @is_editing do %>
-        <%!-- Edit Form --%>
-        <.form
-          for={%{}}
-          phx-submit="save_edit"
-          id={"edit-form-#{@movie.index}"}
-          class="flex-1"
-        >
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-sm">Movie Title</span>
-            </label>
-            <div class="relative">
-              <input
-                type="text"
-                name="edit_form[title]"
-                value={@edit_form["title"]}
-                class="input input-bordered input-sm w-full"
-                phx-change="search_series"
-                phx-debounce="300"
-                autocomplete="off"
-              />
-              <%= if @search_results != [] do %>
-                <.search_results_dropdown results={@search_results} />
-              <% end %>
+        <%!-- Edit Form Card --%>
+        <div class="card card-compact bg-base-100 border border-primary/30 shadow-lg w-full">
+          <div class="card-body gap-4">
+            <%!-- Header --%>
+            <div class="flex items-start gap-3 pb-2 border-b border-base-300">
+              <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
+                <.icon name="hero-film" class="w-5 h-5 text-accent" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <h4 class="font-semibold text-sm">Edit Movie Match</h4>
+                <p class="text-xs text-base-content/60 truncate">
+                  {Path.basename(@movie.file.path)}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle"
+                phx-click="cancel_edit"
+              >
+                <.icon name="hero-x-mark" class="w-4 h-4" />
+              </button>
             </div>
+
+            <.form
+              for={%{}}
+              phx-submit="save_edit"
+              id={"edit-form-#{@movie.index}"}
+              class="space-y-4"
+            >
+              <%!-- Movie Title with Search --%>
+              <div class="form-control">
+                <label class="label py-1">
+                  <span class="label-text text-xs font-medium">Movie Title</span>
+                  <%= if @edit_form["provider_id"] do %>
+                    <span class="label-text-alt text-xs text-success">
+                      <.icon name="hero-check-circle" class="w-3 h-3 inline" /> Matched
+                    </span>
+                  <% end %>
+                </label>
+                <div class="relative">
+                  <div class="join w-full">
+                    <span class="join-item flex items-center px-3 bg-base-200 border border-base-300 border-r-0">
+                      <.icon name="hero-magnifying-glass" class="w-4 h-4 text-base-content/50" />
+                    </span>
+                    <input
+                      type="text"
+                      name="edit_form[title]"
+                      value={@edit_form["title"]}
+                      class="input input-bordered input-sm join-item flex-1"
+                      phx-change="search_series"
+                      phx-debounce="300"
+                      autocomplete="off"
+                      placeholder="Search for movie..."
+                    />
+                  </div>
+                  <%= if @search_results != [] do %>
+                    <.search_results_dropdown results={@search_results} />
+                  <% end %>
+                </div>
+              </div>
+
+              <input type="hidden" name="edit_form[provider_id]" value={@edit_form["provider_id"]} />
+              <input type="hidden" name="edit_form[type]" value={@edit_form["type"]} />
+              <input type="hidden" name="edit_form[season]" value="" />
+              <input type="hidden" name="edit_form[episodes]" value="" />
+
+              <%!-- Year Field --%>
+              <div class="form-control max-w-32">
+                <label class="label py-1">
+                  <span class="label-text text-xs font-medium">Year</span>
+                </label>
+                <input
+                  type="number"
+                  name="edit_form[year]"
+                  value={@edit_form["year"]}
+                  class="input input-bordered input-sm w-full"
+                  placeholder="2024"
+                  min="1900"
+                  max="2100"
+                />
+              </div>
+
+              <%!-- Action Buttons --%>
+              <div class="card-actions justify-end pt-2 border-t border-base-300">
+                <button type="button" class="btn btn-ghost btn-sm" phx-click="cancel_edit">
+                  Cancel
+                </button>
+                <button type="submit" class="btn btn-primary btn-sm gap-1">
+                  <.icon name="hero-check" class="w-4 h-4" /> Save Changes
+                </button>
+              </div>
+            </.form>
           </div>
-          <input type="hidden" name="edit_form[provider_id]" value={@edit_form["provider_id"]} />
-          <input type="hidden" name="edit_form[type]" value={@edit_form["type"]} />
-          <input type="hidden" name="edit_form[season]" value="" />
-          <input type="hidden" name="edit_form[episodes]" value="" />
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-sm">Year</span>
-            </label>
-            <input
-              type="number"
-              name="edit_form[year]"
-              value={@edit_form["year"]}
-              class="input input-bordered input-sm"
-              placeholder="e.g., 2024"
-              min="1900"
-              max="2100"
-            />
-          </div>
-          <div class="flex gap-2 justify-end">
-            <button type="button" class="btn btn-ghost btn-sm" phx-click="cancel_edit">
-              Cancel
-            </button>
-            <button type="submit" class="btn btn-primary btn-sm">
-              <.icon name="hero-check" class="w-4 h-4" /> Save
-            </button>
-          </div>
-        </.form>
+        </div>
       <% else %>
         <%!-- Normal Display --%>
         <input
@@ -780,93 +842,161 @@ defmodule MydiaWeb.ImportMediaLive.Components do
     ~H"""
     <li class={"flex items-center gap-3 py-2 px-3 hover:bg-base-200/50 rounded-lg " <> if(!@is_editing, do: "opacity-60", else: "")}>
       <%= if @is_editing do %>
-        <.form
-          for={%{}}
-          phx-submit="save_edit"
-          id={"edit-form-#{@file.index}"}
-          class="flex-1"
-        >
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-sm">Search for Metadata Match</span>
-            </label>
-            <div class="relative">
-              <input
-                type="text"
-                name="edit_form[title]"
-                value={@edit_form["title"]}
-                class="input input-bordered input-sm w-full"
-                phx-change="search_series"
-                phx-debounce="300"
-                autocomplete="off"
-                placeholder="Search by title..."
-              />
-              <%= if @search_results != [] do %>
-                <.search_results_dropdown_with_poster results={@search_results} />
-              <% end %>
-            </div>
-          </div>
-          <input type="hidden" name="edit_form[provider_id]" value={@edit_form["provider_id"]} />
-          <input type="hidden" name="edit_form[type]" value={@edit_form["type"]} />
-          <%= if @edit_form["type"] == "tv_show" do %>
-            <div class="grid grid-cols-2 gap-2">
-              <div class="form-control">
-                <label class="label">
-                  <span class="label-text text-xs">Season</span>
-                </label>
-                <input
-                  type="number"
-                  name="edit_form[season]"
-                  value={@edit_form["season"]}
-                  class="input input-bordered input-sm"
-                  placeholder="1"
-                  min="0"
-                />
+        <%!-- Edit Form Card --%>
+        <div class="card card-compact bg-base-100 border border-warning/30 shadow-lg w-full">
+          <div class="card-body gap-4">
+            <%!-- Header --%>
+            <div class="flex items-start gap-3 pb-2 border-b border-base-300">
+              <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center shrink-0">
+                <.icon name="hero-question-mark-circle" class="w-5 h-5 text-warning" />
               </div>
-              <div class="form-control">
-                <label class="label">
-                  <span class="label-text text-xs">Episode(s)</span>
-                </label>
-                <input
-                  type="text"
-                  name="edit_form[episodes]"
-                  value={@edit_form["episodes"]}
-                  class="input input-bordered input-sm"
-                  placeholder="1, 2"
-                />
+              <div class="flex-1 min-w-0">
+                <h4 class="font-semibold text-sm">Find Metadata Match</h4>
+                <p class="text-xs text-base-content/60 truncate">
+                  {Path.basename(@file.file.path)}
+                </p>
               </div>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle"
+                phx-click="cancel_edit"
+              >
+                <.icon name="hero-x-mark" class="w-4 h-4" />
+              </button>
             </div>
-          <% else %>
-            <input type="hidden" name="edit_form[season]" value="" />
-            <input type="hidden" name="edit_form[episodes]" value="" />
-          <% end %>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-xs">Year</span>
-            </label>
-            <input
-              type="number"
-              name="edit_form[year]"
-              value={@edit_form["year"]}
-              class="input input-bordered input-sm"
-              placeholder="2024"
-              min="1900"
-              max="2100"
-            />
-          </div>
-          <div class="flex gap-2 justify-end">
-            <button type="button" class="btn btn-ghost btn-sm" phx-click="cancel_edit">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="btn btn-primary btn-sm"
-              disabled={@edit_form["provider_id"] == nil or @edit_form["provider_id"] == ""}
+
+            <.form
+              for={%{}}
+              phx-submit="save_edit"
+              id={"edit-form-#{@file.index}"}
+              class="space-y-4"
             >
-              <.icon name="hero-check" class="w-4 h-4" /> Apply Match
-            </button>
+              <%!-- Search Field --%>
+              <div class="form-control">
+                <label class="label py-1">
+                  <span class="label-text text-xs font-medium">Search for Title</span>
+                  <%= if @edit_form["provider_id"] do %>
+                    <span class="label-text-alt text-xs text-success">
+                      <.icon name="hero-check-circle" class="w-3 h-3 inline" /> Matched
+                    </span>
+                  <% end %>
+                </label>
+                <div class="relative">
+                  <div class="join w-full">
+                    <span class="join-item flex items-center px-3 bg-base-200 border border-base-300 border-r-0">
+                      <.icon name="hero-magnifying-glass" class="w-4 h-4 text-base-content/50" />
+                    </span>
+                    <input
+                      type="text"
+                      name="edit_form[title]"
+                      value={@edit_form["title"]}
+                      class="input input-bordered input-sm join-item flex-1"
+                      phx-change="search_series"
+                      phx-debounce="300"
+                      autocomplete="off"
+                      placeholder="Search by title..."
+                    />
+                  </div>
+                  <%= if @search_results != [] do %>
+                    <.search_results_dropdown_with_poster results={@search_results} />
+                  <% end %>
+                </div>
+              </div>
+
+              <input type="hidden" name="edit_form[provider_id]" value={@edit_form["provider_id"]} />
+              <input type="hidden" name="edit_form[type]" value={@edit_form["type"]} />
+
+              <%!-- Media Type Indicator --%>
+              <%= if @edit_form["provider_id"] do %>
+                <div class="flex items-center gap-2 py-2 px-3 bg-base-200/50 rounded-lg">
+                  <%= if @edit_form["type"] == "tv_show" do %>
+                    <.icon name="hero-tv" class="w-4 h-4 text-info" />
+                    <span class="text-xs font-medium">TV Series</span>
+                  <% else %>
+                    <.icon name="hero-film" class="w-4 h-4 text-accent" />
+                    <span class="text-xs font-medium">Movie</span>
+                  <% end %>
+                </div>
+              <% end %>
+
+              <%!-- Conditional Season/Episode Fields --%>
+              <%= if @edit_form["type"] == "tv_show" do %>
+                <div class="grid grid-cols-3 gap-3">
+                  <div class="form-control">
+                    <label class="label py-1">
+                      <span class="label-text text-xs font-medium">Season</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="edit_form[season]"
+                      value={@edit_form["season"]}
+                      class="input input-bordered input-sm w-full"
+                      placeholder="1"
+                      min="0"
+                    />
+                  </div>
+                  <div class="form-control">
+                    <label class="label py-1">
+                      <span class="label-text text-xs font-medium">Episode(s)</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="edit_form[episodes]"
+                      value={@edit_form["episodes"]}
+                      class="input input-bordered input-sm w-full"
+                      placeholder="1, 2"
+                    />
+                  </div>
+                  <div class="form-control">
+                    <label class="label py-1">
+                      <span class="label-text text-xs font-medium">Year</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="edit_form[year]"
+                      value={@edit_form["year"]}
+                      class="input input-bordered input-sm w-full"
+                      placeholder="2024"
+                      min="1900"
+                      max="2100"
+                    />
+                  </div>
+                </div>
+              <% else %>
+                <input type="hidden" name="edit_form[season]" value="" />
+                <input type="hidden" name="edit_form[episodes]" value="" />
+                <div class="form-control max-w-32">
+                  <label class="label py-1">
+                    <span class="label-text text-xs font-medium">Year</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="edit_form[year]"
+                    value={@edit_form["year"]}
+                    class="input input-bordered input-sm w-full"
+                    placeholder="2024"
+                    min="1900"
+                    max="2100"
+                  />
+                </div>
+              <% end %>
+
+              <%!-- Action Buttons --%>
+              <div class="card-actions justify-end pt-2 border-t border-base-300">
+                <button type="button" class="btn btn-ghost btn-sm" phx-click="cancel_edit">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="btn btn-primary btn-sm gap-1"
+                  disabled={@edit_form["provider_id"] == nil or @edit_form["provider_id"] == ""}
+                >
+                  <.icon name="hero-check" class="w-4 h-4" /> Apply Match
+                </button>
+              </div>
+            </.form>
           </div>
-        </.form>
+        </div>
       <% else %>
         <input type="checkbox" class="checkbox checkbox-primary checkbox-sm" disabled />
         <div class="flex-1 min-w-0">
@@ -1150,25 +1280,50 @@ defmodule MydiaWeb.ImportMediaLive.Components do
 
   def search_results_dropdown(assigns) do
     ~H"""
-    <div class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-      <%= for result <- @results do %>
-        <button
-          type="button"
-          class="w-full text-left px-3 py-2 hover:bg-base-200 border-b border-base-300 last:border-b-0"
-          phx-click="select_search_result"
-          phx-value-provider_id={result.provider_id}
-          phx-value-title={result.title}
-          phx-value-year={result.year || ""}
-          phx-value-type={result.media_type}
-        >
-          <div class="font-medium text-sm">
-            {result.title}
-          </div>
-          <div class="text-xs text-base-content/60">
-            {result.year} • {String.upcase(to_string(result.media_type))}
-          </div>
-        </button>
-      <% end %>
+    <div class="absolute z-20 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-xl max-h-56 overflow-y-auto">
+      <div class="py-1">
+        <%= for result <- @results do %>
+          <button
+            type="button"
+            class="w-full text-left px-3 py-2 hover:bg-primary/10 transition-colors flex items-center gap-3"
+            phx-click="select_search_result"
+            phx-value-provider_id={result.provider_id}
+            phx-value-title={result.title}
+            phx-value-year={result.year || ""}
+            phx-value-type={result.media_type}
+          >
+            <div class={"w-8 h-8 rounded flex items-center justify-center shrink-0 " <>
+              if(result.media_type == :tv_show or result.media_type == "tv_show", do: "bg-info/10 text-info", else: "bg-accent/10 text-accent")
+            }>
+              <%= if result.media_type == :tv_show or result.media_type == "tv_show" do %>
+                <.icon name="hero-tv" class="w-4 h-4" />
+              <% else %>
+                <.icon name="hero-film" class="w-4 h-4" />
+              <% end %>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-sm truncate">{result.title}</div>
+              <div class="flex items-center gap-2 text-xs text-base-content/60">
+                <%= if result.year do %>
+                  <span>{result.year}</span>
+                  <span>•</span>
+                <% end %>
+                <span class={
+                  if(result.media_type == :tv_show or result.media_type == "tv_show",
+                    do: "text-info",
+                    else: "text-accent"
+                  )
+                }>
+                  {if(result.media_type == :tv_show or result.media_type == "tv_show",
+                    do: "TV Series",
+                    else: "Movie"
+                  )}
+                </span>
+              </div>
+            </div>
+          </button>
+        <% end %>
+      </div>
     </div>
     """
   end
@@ -1183,32 +1338,59 @@ defmodule MydiaWeb.ImportMediaLive.Components do
 
   def search_results_dropdown_with_poster(assigns) do
     ~H"""
-    <div class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-      <%= for result <- @results do %>
-        <button
-          type="button"
-          class="w-full text-left px-3 py-2 hover:bg-base-200 border-b border-base-300 last:border-b-0 flex gap-3"
-          phx-click="select_search_result"
-          phx-value-provider_id={result.provider_id}
-          phx-value-title={result.title}
-          phx-value-year={result.year || ""}
-          phx-value-type={result.media_type}
-        >
-          <%= if result.poster_path do %>
-            <img
-              src={"https://image.tmdb.org/t/p/w92#{result.poster_path}"}
-              alt={result.title}
-              class="w-10 rounded"
-            />
-          <% end %>
-          <div class="flex-1">
-            <div class="font-medium text-sm">{result.title}</div>
-            <div class="text-xs text-base-content/60">
-              {result.year} • {String.upcase(to_string(result.media_type))}
+    <div class="absolute z-20 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-xl max-h-72 overflow-y-auto">
+      <div class="py-1">
+        <%= for result <- @results do %>
+          <button
+            type="button"
+            class="w-full text-left px-3 py-2.5 hover:bg-primary/10 transition-colors flex items-center gap-3"
+            phx-click="select_search_result"
+            phx-value-provider_id={result.provider_id}
+            phx-value-title={result.title}
+            phx-value-year={result.year || ""}
+            phx-value-type={result.media_type}
+          >
+            <%= if result.poster_path do %>
+              <img
+                src={"https://image.tmdb.org/t/p/w92#{result.poster_path}"}
+                alt={result.title}
+                class="w-10 h-14 rounded object-cover shadow-sm"
+              />
+            <% else %>
+              <div class={"w-10 h-14 rounded flex items-center justify-center shrink-0 " <>
+                if(result.media_type == :tv_show or result.media_type == "tv_show", do: "bg-info/10 text-info", else: "bg-accent/10 text-accent")
+              }>
+                <%= if result.media_type == :tv_show or result.media_type == "tv_show" do %>
+                  <.icon name="hero-tv" class="w-5 h-5" />
+                <% else %>
+                  <.icon name="hero-film" class="w-5 h-5" />
+                <% end %>
+              </div>
+            <% end %>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-sm truncate">{result.title}</div>
+              <div class="flex items-center gap-2 text-xs text-base-content/60 mt-0.5">
+                <%= if result.year do %>
+                  <span>{result.year}</span>
+                  <span>•</span>
+                <% end %>
+                <span class={[
+                  "badge badge-xs",
+                  if(result.media_type == :tv_show or result.media_type == "tv_show",
+                    do: "badge-info",
+                    else: "badge-accent"
+                  )
+                ]}>
+                  {if(result.media_type == :tv_show or result.media_type == "tv_show",
+                    do: "TV Series",
+                    else: "Movie"
+                  )}
+                </span>
+              </div>
             </div>
-          </div>
-        </button>
-      <% end %>
+          </button>
+        <% end %>
+      </div>
     </div>
     """
   end

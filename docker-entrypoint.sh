@@ -19,9 +19,16 @@ case "$1" in
 esac
 
 # Minimal setup for all mix commands
-# CRITICAL: Clean any host-compiled NIFs that are incompatible with container
-if [ -d "_build/dev/lib/exqlite" ]; then
-    rm -rf _build/dev/lib/exqlite
+# Only clean exqlite if the NIF was compiled for a different platform (e.g., host vs container)
+# This avoids unnecessary recompilation on every container start
+NIF_FILE="_build/dev/lib/exqlite/priv/sqlite3_nif.so"
+if [ -f "$NIF_FILE" ]; then
+    # Check if the NIF is compatible with this container by checking its ELF interpreter
+    # Host-compiled NIFs (e.g., NixOS) will have a different interpreter than container NIFs
+    if ! ldd "$NIF_FILE" > /dev/null 2>&1; then
+        echo "==> Removing incompatible exqlite NIF (compiled for different platform)..."
+        rm -rf _build/dev/lib/exqlite
+    fi
 fi
 
 # Install Hex and Rebar if not already installed (quiet)

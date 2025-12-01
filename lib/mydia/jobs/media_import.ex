@@ -196,23 +196,20 @@ defmodule Mydia.Jobs.MediaImport do
 
   defp get_client_info(download) do
     if download.download_client && download.download_client_id do
-      runtime_config = Settings.get_runtime_config()
+      # Search both database and runtime config clients
+      client_config =
+        Settings.list_download_client_configs()
+        |> Enum.find(&(&1.name == download.download_client))
 
-      if is_struct(runtime_config) and Map.has_key?(runtime_config, :download_clients) do
-        client_config =
-          runtime_config.download_clients
-          |> Enum.find(&(&1.name == download.download_client))
+      if client_config do
+        adapter = get_adapter_module(client_config.type)
 
-        if client_config do
-          adapter = get_adapter_module(client_config.type)
-
-          %{
-            adapter: adapter,
-            config: build_client_config(client_config),
-            client_id: download.download_client_id,
-            remove_completed: Map.get(client_config, :remove_completed, false)
-          }
-        end
+        %{
+          adapter: adapter,
+          config: build_client_config(client_config),
+          client_id: download.download_client_id,
+          remove_completed: Map.get(client_config, :remove_completed, false)
+        }
       end
     end
   end

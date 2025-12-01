@@ -1382,7 +1382,7 @@ defmodule MydiaWeb.ImportMediaLive.Index do
     |> Ecto.Changeset.cast(params, [:title, :provider_id, :year, :season, :type])
     |> cast_episode_list(params["episodes"])
     |> Ecto.Changeset.validate_required([:title, :type])
-    |> Ecto.Changeset.validate_inclusion(:type, ["movie", "tv_show"])
+    |> normalize_media_type()
   end
 
   defp validate_search_result(params) do

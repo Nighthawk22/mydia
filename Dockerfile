@@ -35,8 +35,16 @@ WORKDIR /app
 COPY mix.exs mix.lock ./
 
 # Install dependencies
-RUN mix deps.get --only prod && \
-    mix deps.compile
+RUN mix deps.get --only prod
+
+# Apply patches to dependencies
+# Fix ueberauth_oidcc to respect user-provided response_mode option
+# This prevents auto-selection of JARM modes (query.jwt) which some OIDC providers
+# advertise but don't properly support
+COPY patches/ueberauth_oidcc_request.ex ./deps/ueberauth_oidcc/lib/ueberauth_oidcc/request.ex
+
+# Compile dependencies
+RUN mix deps.compile
 
 # Copy application source
 COPY config ./config

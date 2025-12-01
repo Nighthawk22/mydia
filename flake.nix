@@ -13,6 +13,11 @@
           inherit system;
           config.allowUnfree = true;
         };
+
+        # Note on npm dependencies:
+        # assets/package.json has file:../deps/phoenix path dependencies
+        # These reference Elixir deps, so npm install must happen after mix deps.get
+        # Asset compilation is handled inline during the Mix release build (see packages.default)
       in
       {
         devShells.default = pkgs.mkShell {

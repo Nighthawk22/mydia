@@ -15,6 +15,9 @@
 /.nix-hex/
 /.nix-mix/
 
+# Nix build result symlink
+/result
+
 # Where 3rd-party dependencies like ExDoc output generated docs.
 /doc/
 

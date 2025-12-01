@@ -114,6 +114,10 @@ defmodule Mydia.Application do
     # This is needed because UeberauthOidcc.Application starts before runtime.exs runs,
     # so the issuers config is not available when it starts. We need to start the
     # provider workers ourselves after runtime.exs has set the configuration.
+    #
+    # However, in releases where runtime.exs runs before the app starts, the library
+    # may already start the workers. We check if they're already running to avoid
+    # "already started" errors.
     case Application.get_env(:ueberauth_oidcc, :issuers) do
       nil ->
         []
@@ -124,15 +128,31 @@ defmodule Mydia.Application do
       issuers when is_list(issuers) ->
         require Logger
 
-        Logger.info(
-          "Starting OIDC provider configuration workers for #{length(issuers)} issuer(s)"
-        )
+        # Filter out issuers whose workers are already running
+        issuers_to_start =
+          Enum.reject(issuers, fn child_opts ->
+            name = Map.fetch!(child_opts, :name)
+            # Check if the worker is already registered
+            case Process.whereis(name) do
+              nil -> false
+              _pid -> true
+            end
+          end)
 
-        for child_opts <- issuers do
-          name = Map.fetch!(child_opts, :name)
-          child_opts = Map.put_new(child_opts, :backoff_type, :random)
-          Logger.info("  - Starting OIDC provider: #{inspect(name)}")
-          Supervisor.child_spec({Oidcc.ProviderConfiguration.Worker, child_opts}, id: name)
+        if issuers_to_start == [] do
+          Logger.info("OIDC provider workers already running (started by library)")
+          []
+        else
+          Logger.info(
+            "Starting OIDC provider configuration workers for #{length(issuers_to_start)} issuer(s)"
+          )
+
+          for child_opts <- issuers_to_start do
+            name = Map.fetch!(child_opts, :name)
+            child_opts = Map.put_new(child_opts, :backoff_type, :random)
+            Logger.info("  - Starting OIDC provider: #{inspect(name)}")
+            Supervisor.child_spec({Oidcc.ProviderConfiguration.Worker, child_opts}, id: name)
+          end
         end
     end
   end

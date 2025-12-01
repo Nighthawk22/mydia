@@ -39,11 +39,31 @@ jobs:
           otp-version: ${{ env.OTP_VERSION }}
 
       - name: Install Chrome and chromedriver
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install matching chromedriver
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser chromium-chromedriver
-          # Add chromedriver to PATH
-          echo "/usr/lib/chromium-browser/" >> $GITHUB_PATH
+          # Get the installed Chrome version
+          CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+')
+          CHROME_MAJOR=$(echo $CHROME_VERSION | cut -d. -f1)
+
+          # Get matching chromedriver
+          CHROMEDRIVER_URL="https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}.0/linux64/chromedriver-linux64.zip"
+
+          # Try the new Chrome for Testing endpoint first
+          if ! curl -sL "$CHROMEDRIVER_URL" -o chromedriver.zip 2>/dev/null; then
+            # Fallback: Get the latest chromedriver for this major version
+            LATEST_VERSION=$(curl -sS "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_MAJOR}")
+            CHROMEDRIVER_URL="https://storage.googleapis.com/chrome-for-testing-public/${LATEST_VERSION}/linux64/chromedriver-linux64.zip"
+            curl -sL "$CHROMEDRIVER_URL" -o chromedriver.zip
+          fi
+
+          unzip -q chromedriver.zip
+          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
+          sudo chmod +x /usr/local/bin/chromedriver
+          chromedriver --version
 
       - name: Restore dependencies cache
         uses: actions/cache@v4
@@ -67,7 +87,7 @@ jobs:
       - name: Run feature tests
         run: mix test --only feature
         env:
-          CHROMEDRIVER_PATH: /usr/lib/chromium-browser/chromedriver
+          CHROMEDRIVER_PATH: /usr/local/bin/chromedriver
 
       - name: Upload screenshots on failure
         if: failure()
